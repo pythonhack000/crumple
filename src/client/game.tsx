@@ -1,208 +1,148 @@
 import './index.css';
 
-import { StrictMode, useState } from 'react';
+import { StrictMode, useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { navigateToPost, showLoginPrompt, showShareSheet } from '@devvit/web/client';
-import type { DayView, InitResponse } from '../shared/api';
-import { CALL_POINTS } from '../shared/game';
-import { Leaderboard, OptionList, ResultBars, StatsLine } from './components';
-import { people, timeLeft, useNow } from './time';
-import { useHunch } from './useHunch';
+import type Phaser from 'phaser';
+import type { Level, Point } from '../shared/level';
+import { shotScore } from '../shared/level';
+import { builtInLevelFor } from '../shared/levels';
+import { createGame } from './oneshot/scene';
+import type { SceneData, ShotResult } from './oneshot/scene';
 
-type Step = 'pick' | 'call';
+const MISS_RESTART_MS = 450;
+const LAUNCH_DAY = Date.UTC(2026, 10, 23);
 
-function Header({ day }: { day: DayView }) {
+function todayNumber(): number {
+  return Math.floor((Date.now() - LAUNCH_DAY) / 86_400_000) + 1;
+}
+
+type Sunk = { attempt: number; stars: number; score: number; path: Point[] };
+
+function Stars({ got, of }: { got: number; of: number }) {
   return (
-    <header className="flex flex-col gap-3">
-      <p className="text-sm text-muted">
-        Hunch #{day.dayNumber}, {people(day.players)} played
-      </p>
-      <h1 className="font-display text-[1.9rem] font-bold leading-[1.1] tracking-[-0.01em] text-balance">
-        {day.question.prompt}
-      </h1>
-    </header>
+    <span aria-label={`${got} of ${of} stars`} className="tracking-[0.15em]">
+      {Array.from({ length: of }, (_, i) => (
+        <span key={i} className={i < got ? 'text-coral' : 'text-ink/25'}>
+          ★
+        </span>
+      ))}
+    </span>
   );
 }
 
-type PlayProps = {
-  day: DayView;
-  isLoggedIn: boolean;
-  isVoting: boolean;
-  voteError: string | null;
-  onVote: (pick: number, call: number) => void;
+type ResultCardProps = {
+  sunk: Sunk;
+  level: Level;
+  onPractice: () => void;
 };
 
-function Play({ day, isLoggedIn, isVoting, voteError, onVote }: PlayProps) {
-  const [step, setStep] = useState<Step>('pick');
-  const [pick, setPick] = useState<number | null>(null);
-  const [call, setCall] = useState<number | null>(null);
-
-  if (!isLoggedIn) {
-    return (
-      <section className="flex flex-col gap-4">
-        <p className="text-muted">Log in to answer and get your hunch scored tonight.</p>
-        <button type="button" className="h-12 rounded-full bg-ink font-semibold text-paper" onClick={showLoginPrompt}>
-          Log in to play
-        </button>
-      </section>
-    );
-  }
-
-  const isPickStep = step === 'pick';
-  const selected = isPickStep ? pick : call;
-  const handleNext = () => {
-    if (isPickStep) setStep('call');
-    else if (pick !== null && call !== null) onVote(pick, call);
-  };
-
+function ResultCard({ sunk, level, onPractice }: ResultCardProps) {
+  const headline = sunk.attempt === 1 ? 'One shot. In.' : `In on shot ${sunk.attempt}.`;
   return (
-    <section className="flex flex-col gap-4">
-      <div>
-        <p className="text-sm text-muted">Step {isPickStep ? 1 : 2} of 2</p>
-        <h2 className="text-lg font-semibold">
-          {isPickStep ? 'What’s your answer?' : 'Now, what will most people pick?'}
-        </h2>
-        {!isPickStep && (
-          <p className="text-muted">
-            +{CALL_POINTS.majority} if you read the crowd right, +{CALL_POINTS.runnerUp} for second place.
-          </p>
-        )}
-      </div>
-      <OptionList
-        options={day.question.options}
-        selected={selected}
-        onSelect={isPickStep ? setPick : setCall}
-        disabled={isVoting}
-      />
-      {voteError && (
-        <p role="alert" className="text-sm font-medium">
-          {voteError}
-        </p>
-      )}
-      <div className="flex gap-2">
-        {!isPickStep && (
-          <button
-            type="button"
-            className="h-12 rounded-full border-2 border-line px-5 font-semibold"
-            onClick={() => setStep('pick')}
-            disabled={isVoting}
-          >
-            Back
-          </button>
-        )}
-        <button
-          type="button"
-          className="h-12 flex-1 rounded-full bg-ink font-semibold text-paper disabled:opacity-40"
-          disabled={selected === null || isVoting}
-          onClick={handleNext}
-        >
-          {isPickStep ? 'Next' : isVoting ? 'Locking in…' : 'Lock it in'}
-        </button>
-      </div>
-    </section>
-  );
-}
-
-function LockedIn({ day }: { day: DayView }) {
-  const now = useNow();
-  const answer = day.myPick === null ? '' : day.question.options[day.myPick];
-  const hunch = day.myCall === null ? '' : day.question.options[day.myCall];
-  const handleShare = () =>
-    void showShareSheet({ title: 'Hunch', text: `Can you read the crowd? ${day.question.prompt}` }).catch(
-      (error: unknown) => console.error('Share failed', error)
-    );
-
-  return (
-    <section className="flex flex-col gap-3">
-      <p className="text-lg">
-        You said <strong>{answer}</strong>. Your hunch is that most people said <strong>{hunch}</strong>.
+    <div className="absolute inset-x-3 bottom-3 rounded-2xl bg-ink p-5 text-felt shadow-[0_12px_0_-4px_rgba(18,48,42,0.25)]">
+      <p className="font-display text-3xl font-bold leading-tight">{headline}</p>
+      <p className="mt-1 flex items-baseline gap-3 text-lg">
+        <Stars got={sunk.stars} of={level.stars.length} />
+        <span className="font-display text-2xl font-bold tabular-nums">{sunk.score}</span>
+        <span className="text-felt/70">points locked in</span>
       </p>
-      <p className="text-muted">
-        The crowd’s answer is revealed in {timeLeft(day.closesAt, now)}. Argue your case in the comments meanwhile.
-      </p>
-      <button type="button" className="h-12 rounded-full border-2 border-ink font-semibold" onClick={handleShare}>
-        Challenge a friend
+      <button
+        type="button"
+        onClick={onPractice}
+        className="mt-4 h-12 w-full rounded-full bg-coral font-semibold text-ink"
+      >
+        Practice for more stars
       </button>
-    </section>
-  );
-}
-
-function verdict(points: number | null): string {
-  if (points === null) return 'You sat this one out. Here’s how the crowd went.';
-  if (points === CALL_POINTS.majority) return `You read the crowd. +${points}`;
-  if (points === CALL_POINTS.runnerUp) return `Close: second place. +${points}`;
-  return 'The crowd went the other way.';
-}
-
-function Results({ day, todayPostId }: { day: DayView; todayPostId: string | null }) {
-  return (
-    <section className="flex flex-col gap-4">
-      <h2 className="font-display text-xl font-bold">{verdict(day.result?.myPoints ?? null)}</h2>
-      <ResultBars day={day} />
-      {todayPostId && (
-        <button
-          type="button"
-          className="h-12 rounded-full bg-ink font-semibold text-paper"
-          onClick={() => navigateToPost(todayPostId as `t3_${string}`)}
-        >
-          Play today’s question
-        </button>
-      )}
-    </section>
-  );
-}
-
-function Round({ data, isVoting, voteError, onVote }: {
-  data: InitResponse;
-  isVoting: boolean;
-  voteError: string | null;
-  onVote: (pick: number, call: number) => void;
-}) {
-  const { day, me, leaders } = data;
-  const hasVoted = day.myPick !== null;
-  let body;
-  if (day.status === 'closed') body = <Results day={day} todayPostId={data.todayPostId} />;
-  else if (hasVoted) body = <LockedIn day={day} />;
-  else body = <Play day={day} isLoggedIn={me !== null} isVoting={isVoting} voteError={voteError} onVote={onVote} />;
-
-  return (
-    <main className="mx-auto flex min-h-screen max-w-xl flex-col gap-8 px-4 py-6">
-      <Header day={day} />
-      {body}
-      {me && (hasVoted || day.status === 'closed') && <StatsLine me={me} />}
-      {(hasVoted || day.status === 'closed') && (
-        <section className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold">Best crowd readers</h2>
-          <Leaderboard leaders={leaders} username={me?.username} />
-        </section>
-      )}
-    </main>
+    </div>
   );
 }
 
 export function App() {
-  const { state, reload, vote, voting, voteError } = useHunch();
+  const day = todayNumber();
+  const level = builtInLevelFor(day);
+  const holder = useRef<HTMLDivElement>(null);
+  const game = useRef<Phaser.Game | null>(null);
+  const [attempt, setAttempt] = useState(1);
+  const [hasLaunched, setHasLaunched] = useState(false);
+  const [sunk, setSunk] = useState<Sunk | null>(null);
+  const [isPractice, setIsPractice] = useState(false);
+  const [missFlash, setMissFlash] = useState(false);
 
-  if (state.status === 'loading') {
-    return <p className="p-6 text-muted">Loading today’s question…</p>;
-  }
-  if (state.status === 'error') {
-    return (
-      <main className="flex flex-col gap-3 p-6">
-        <p>{state.message}</p>
-        <button type="button" className="h-11 self-start rounded-full bg-ink px-5 font-semibold text-paper" onClick={() => void reload()}>
-          Try again
-        </button>
-      </main>
-    );
-  }
+  // The scene reads these through refs so callbacks never go stale.
+  const attemptRef = useRef(attempt);
+  const lockedRef = useRef(false);
+  useEffect(() => {
+    attemptRef.current = attempt;
+    lockedRef.current = sunk !== null;
+  }, [attempt, sunk]);
+
+  const restartScene = useCallback((data: SceneData) => {
+    game.current?.scene.getScene('play')?.scene.restart(data);
+  }, []);
+
+  const sceneData = useCallback((): SceneData => {
+    const data: SceneData = {
+      level,
+      ghosts: [],
+      onLaunch: () => setHasLaunched(true),
+      onResult: (result: ShotResult) => {
+        if (result.sunk) {
+          if (!lockedRef.current) {
+            setSunk({
+              attempt: attemptRef.current,
+              stars: result.stars,
+              score: shotScore(attemptRef.current, result.stars),
+              path: result.path,
+            });
+          }
+          return;
+        }
+        setMissFlash(true);
+        window.setTimeout(() => {
+          setMissFlash(false);
+          if (!lockedRef.current) setAttempt((value) => value + 1);
+          restartScene(data);
+        }, MISS_RESTART_MS);
+      },
+    };
+    return data;
+  }, [level, restartScene]);
+
+  useEffect(() => {
+    if (!holder.current) return;
+    game.current = createGame(holder.current, sceneData());
+    return () => {
+      game.current?.destroy(true);
+      game.current = null;
+    };
+  }, [sceneData]);
+
+  const handlePractice = () => {
+    setIsPractice(true);
+    restartScene(sceneData());
+  };
+
+  const showCard = sunk !== null && !isPractice;
+  const shotLabel = sunk ? (isPractice ? 'Practice' : `In on shot ${sunk.attempt}`) : `Shot ${attempt}`;
+
   return (
-    <Round
-      data={state.data}
-      isVoting={voting}
-      voteError={voteError}
-      onVote={(pick, call) => void vote({ pick, call })}
-    />
+    <main className="relative mx-auto flex h-screen max-w-[480px] flex-col bg-felt text-ink select-none">
+      <header className="flex items-baseline justify-between px-4 pt-3 pb-1">
+        <h1 className="font-display text-xl font-bold">
+          One Shot #{day} <span className="font-normal text-ink-soft">{level.name}</span>
+        </h1>
+        <p className={`tabular-nums font-semibold transition-colors ${missFlash ? 'text-coral' : ''}`}>
+          {missFlash ? 'Missed' : shotLabel}
+        </p>
+      </header>
+      <div ref={holder} className="relative min-h-0 flex-1 touch-none" />
+      {!hasLaunched && (
+        <p className="pointer-events-none absolute inset-x-0 bottom-6 text-center text-ink-soft">
+          Drag anywhere, pull back, let go
+        </p>
+      )}
+      {showCard && <ResultCard sunk={sunk} level={level} onPractice={handlePractice} />}
+    </main>
   );
 }
 

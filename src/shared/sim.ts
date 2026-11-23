@@ -60,7 +60,7 @@ export function gravityPerStep(engine: Matter.Engine): number {
 export function previewArc(from: Point, velocity: Point, gravity: number, steps = 26, every = 2): Point[] {
   const points: Point[] = [];
   let { x, y } = from;
-  let vx = velocity.x;
+  const vx = velocity.x;
   let vy = velocity.y;
   for (let step = 1; step <= steps * every; step += 1) {
     vy += gravity;
