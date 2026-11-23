@@ -1,32 +1,46 @@
-// Serves canned API responses chosen by the ?state= query parameter.
-const question = {
-  prompt: 'You find a $20 bill on an empty street. You...',
-  options: ['Keep it', 'Hand it to the police', 'Leave it there', 'Give it to the next person you see'],
-};
-const closesAt = new Date(Date.now() + 5 * 3600e3 + 12 * 60e3).toISOString();
-const me = { username: 'bekha', streak: 4, bestStreak: 6, total: 17, played: 7, calledRight: 5, rank: 3 };
+// Serves canned API responses so the UI can be previewed without Reddit.
+// ?state=fresh (default) | sunk | guest
+import { builtInLevelFor } from '../../src/shared/levels';
+
+const state = new URLSearchParams(location.search).get('state') ?? 'fresh';
+const levelNumber = Number(new URLSearchParams(location.search).get('level') ?? '1');
+const level = builtInLevelFor(levelNumber);
+const ghost = (dx: number) =>
+  Array.from({ length: 40 }, (_, i) => ({
+    x: level.ball.x + ((level.cup.x - level.ball.x) * i) / 39 + dx,
+    y: level.ball.y - Math.sin((Math.PI * i) / 39) * 260 + ((level.cup.y - level.ball.y) * i) / 39,
+  }));
 const leaders = [
-  { username: 'quietfox', score: 31 },
-  { username: 'tea_and_maps', score: 22 },
-  { username: 'bekha', score: 17 },
-  { username: 'loud_chewer', score: 12 },
-  { username: 'm0untainview', score: 9 },
+  { username: 'quietfox', score: 175 },
+  { username: 'tea_and_maps', score: 150 },
+  { username: 'Afraid-Emotion-6182', score: 140 },
 ];
-const base = { dayKey: '2026-12-01', dayNumber: 12, question, closesAt, players: 1284 };
-const states: Record<string, unknown> = {
-  open: { type: 'init', day: { ...base, status: 'open', myPick: null, myCall: null, result: null }, me, leaders, todayPostId: null },
-  voted: { type: 'init', day: { ...base, status: 'open', myPick: 0, myCall: 1, result: null }, me, leaders, todayPostId: null },
-  closed: {
-    type: 'init',
-    day: { ...base, status: 'closed', myPick: 0, myCall: 0, result: { shares: [46, 21, 9, 24], majority: [0], myPoints: 3 } },
-    me, leaders, todayPostId: 't3_today',
-  },
-  guest: { type: 'init', day: { ...base, status: 'open', myPick: null, myCall: null, result: null }, me: null, leaders, todayPostId: null },
+const me = { username: 'Afraid-Emotion-6182', streak: 3, bestStreak: 5, total: 610, rank: 4 };
+const round = {
+  dayKey: '2026-11-24',
+  dayNumber: levelNumber,
+  level,
+  status: 'open',
+  closesAt: new Date(Date.now() + 5 * 3600e3).toISOString(),
+  players: 1284,
+  holesInOne: 37,
 };
-const state = new URLSearchParams(location.search).get('state') ?? 'open';
-window.fetch = async (input) => {
+let mine =
+  state === 'sunk' ? { attempts: 3, sunk: { attempt: 3, stars: 2, score: 130 } } : { attempts: 0, sunk: null as unknown };
+const ghosts = state === 'sunk' ? [ghost(-20), ghost(0), ghost(25)] : [];
+
+window.fetch = async (input, init) => {
   const url = String(input);
-  if (url.includes('/api/init')) return new Response(JSON.stringify(states[state]), { status: 200 });
-  if (url.includes('/api/vote')) return new Response(JSON.stringify({ ...(states.voted as object), type: 'vote' }), { status: 200 });
+  if (url.includes('/api/init')) {
+    const body = { type: 'init', round, me: state === 'guest' ? null : me, mine: state === 'guest' ? null : mine, leaders, ghosts, todayPostId: null };
+    return new Response(JSON.stringify(body), { status: 200 });
+  }
+  if (url.includes('/api/shot')) {
+    const shot = JSON.parse(String(init?.body ?? '{}'));
+    const attempts = (mine as { attempts: number }).attempts + 1;
+    mine = shot.sunk ? { attempts, sunk: { attempt: attempts, stars: shot.stars, score: 100 + shot.stars * 25 } } : { attempts, sunk: null };
+    const body = { type: 'shot', mine, me, leaders, ghosts: shot.sunk ? [ghost(-20), ghost(25)] : [], counted: true };
+    return new Response(JSON.stringify(body), { status: 200 });
+  }
   return new Response('{}', { status: 404 });
 };

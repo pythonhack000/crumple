@@ -12,7 +12,7 @@
     "login": "NODE_OPTIONS=\"--require ./tools/reddit-dns.cjs\" devvit login",
     "prettier": "prettier --write .",
     "test:types": "tsc --build",
-    "test:unit": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test \"src/**/*.test.ts\"",
+    "test:unit": "tsx --test \"src/**/*.test.ts\"",
     "check:levels": "tsx tools/check-levels.ts"
   },
   "engines": {

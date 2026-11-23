@@ -1,19 +1,15 @@
 import { reddit } from '@devvit/web/server';
-import type { DayView, PlayerStats, Question, VoteRequest } from '../../shared/api';
-import {
-  CALL_POINTS,
-  dayKeyOf,
-  daysBetween,
-  majorityOf,
-  nextStreak,
-  percentages,
-  scoreCall,
-} from '../../shared/game';
-import { bankQuestionFor } from './questions';
+import type { MyRound, PlayerStats, RoundView, ShotRequest } from '../../shared/api';
+import { dayKeyOf, daysBetween, nextStreak } from '../../shared/game';
+import { shotScore } from '../../shared/level';
+import { builtInLevelFor } from '../../shared/levels';
 import * as store from './store';
 import type { Round } from './store';
 
-export const GAME_NAME = 'Hunch';
+export const GAME_NAME = 'One Shot';
+const RESULTS_TOP = 3;
+/** A player cannot report more shots than this per round. */
+export const MAX_ATTEMPTS = 500;
 
 /** Midnight UTC after the given day: when that day's round closes. */
 export function closesAt(dayKey: string): string {
@@ -22,73 +18,46 @@ export function closesAt(dayKey: string): string {
   return next.toISOString();
 }
 
-export async function buildDayView(round: Round, username: string | undefined): Promise<DayView> {
-  const [players, vote, tally, points] = await Promise.all([
-    store.countPlayers(round.dayKey),
-    username ? store.getVote(round.dayKey, username) : Promise.resolve(undefined),
-    round.status === 'closed'
-      ? store.getTally(round.dayKey, round.question.options.length)
-      : Promise.resolve(undefined),
-    username && round.status === 'closed'
-      ? store.getPoints(round.dayKey, username)
-      : Promise.resolve(null),
-  ]);
-
+export async function buildRoundView(round: Round): Promise<RoundView> {
+  const [players, holesInOne] = await Promise.all([store.countPlayers(round.dayKey), store.countHolesInOne(round.dayKey)]);
   return {
     dayKey: round.dayKey,
     dayNumber: round.dayNumber,
-    question: round.question,
+    level: round.level,
     status: round.status,
-    players,
     closesAt: closesAt(round.dayKey),
-    myPick: vote?.pick ?? null,
-    myCall: vote?.call ?? null,
-    result: tally ? { shares: percentages(tally), majority: majorityOf(tally), myPoints: points } : null,
+    players,
+    holesInOne,
   };
 }
 
 export async function getStats(username: string): Promise<PlayerStats> {
   const [player, rank] = await Promise.all([store.getPlayer(username), store.getRank(username)]);
   // A streak is still alive if the player played today or yesterday.
-  const streakIsAlive = player.lastDay ? daysBetween(player.lastDay, dayKeyOf(new Date())) <= 1 : false;
+  const isAlive = player.lastDay ? daysBetween(player.lastDay, dayKeyOf(new Date())) <= 1 : false;
   return {
     username,
-    streak: streakIsAlive ? player.streak : 0,
+    streak: isAlive ? player.streak : 0,
     bestStreak: player.bestStreak,
     total: player.total,
-    played: player.played,
-    calledRight: player.calledRight,
     rank,
   };
 }
 
-export class VoteError extends Error {}
+export class ShotError extends Error {}
 
-function isValidChoice(value: unknown, optionCount: number): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < optionCount;
-}
-
-/** Records a player's answer and their call on the crowd. */
-export async function castVote(round: Round, username: string, request: VoteRequest): Promise<void> {
-  if (round.status !== 'open') throw new VoteError('This round is closed. Come back for today’s question.');
-  const optionCount = round.question.options.length;
-  if (!isValidChoice(request.pick, optionCount) || !isValidChoice(request.call, optionCount)) {
-    throw new VoteError('That answer is not one of the options.');
-  }
-
-  const added = await store.addVote(round.dayKey, username, { pick: request.pick, call: request.call });
-  if (!added) throw new VoteError('You already played today.');
-
+async function updateStreak(username: string, dayKey: string): Promise<number> {
   const player = await store.getPlayer(username);
-  const streak = nextStreak(player.lastDay || undefined, player.streak, round.dayKey);
-  await store.savePlayer(username, {
-    ...player,
-    streak,
-    bestStreak: Math.max(player.bestStreak, streak),
-    lastDay: round.dayKey,
-    played: player.played + 1,
-  });
-  await updateFlair(username, streak);
+  const streak = nextStreak(player.lastDay, player.streak, dayKey);
+  if (player.lastDay !== dayKey) {
+    await store.savePlayerStreak(username, {
+      ...player,
+      streak,
+      bestStreak: Math.max(player.bestStreak, streak),
+      lastDay: dayKey,
+    });
+  }
+  return streak;
 }
 
 async function updateFlair(username: string, streak: number): Promise<void> {
@@ -97,7 +66,7 @@ async function updateFlair(username: string, streak: number): Promise<void> {
     await reddit.setUserFlair({
       subredditName,
       username,
-      text: `${GAME_NAME} streak: ${streak} ${streak === 1 ? 'day' : 'days'}`,
+      text: `${GAME_NAME}: ${streak} ${streak === 1 ? 'day' : 'days'} in a row`,
     });
   } catch (error) {
     // Flair is a bonus; a subreddit without user flair must not break the game.
@@ -105,59 +74,58 @@ async function updateFlair(username: string, streak: number): Promise<void> {
   }
 }
 
-function resultsComment(round: Round, tally: number[], players: number): string {
-  const shares = percentages(tally);
-  const majority = majorityOf(tally);
-  const lines = round.question.options.map((option, index) => {
-    const marker = majority.includes(index) ? '**' : '';
-    return `- ${marker}${option}: ${shares[index] ?? 0}%${marker}`;
-  });
-  const headline =
-    players === 0
-      ? 'Nobody played this one.'
-      : `${players} ${players === 1 ? 'person' : 'people'} played. The crowd went with **${majority
-          .map((index) => round.question.options[index])
-          .join(' / ')}**.`;
+/**
+ * Records one shot. Attempts are counted here, not trusted from the client.
+ * Shots after the first sink are practice and change nothing.
+ */
+export async function recordShot(round: Round, username: string, shot: ShotRequest): Promise<{ mine: MyRound; counted: boolean }> {
+  if (round.status !== 'open') throw new ShotError('This round is closed. Today’s level is up.');
+  const before = await store.getMyRound(round.dayKey, username);
+  if (before.sunk) return { mine: before, counted: false };
+  if (before.attempts >= MAX_ATTEMPTS) throw new ShotError('That is enough shots for today.');
+
+  const attempt = await store.addAttempt(round.dayKey, username);
+  if (attempt === 1) {
+    const streak = await updateStreak(username, round.dayKey);
+    await updateFlair(username, streak);
+  }
+  if (shot.sunk) {
+    const result = { attempt, stars: shot.stars, score: shotScore(attempt, shot.stars) };
+    if (await store.recordSink(round.dayKey, username, result, shot.path)) {
+      await store.addToTotal(username, result.score);
+    }
+  }
+  return { mine: await store.getMyRound(round.dayKey, username), counted: true };
+}
+
+async function resultsComment(round: Round): Promise<string> {
+  const [view, top] = await Promise.all([buildRoundView(round), store.getDayLeaders(round.dayKey, RESULTS_TOP)]);
+  const podium = top.map((row, index) => `${index + 1}. u/${row.username}: ${row.score}`);
   return [
-    `**${GAME_NAME} #${round.dayNumber} results**`,
+    `**${GAME_NAME} #${round.dayNumber}: ${round.level.name}, final results**`,
     '',
-    headline,
+    `${view.players} ${view.players === 1 ? 'player' : 'players'}, ${view.holesInOne} ${view.holesInOne === 1 ? 'hole in one' : 'holes in one'}.`,
     '',
-    ...lines,
+    ...(podium.length > 0 ? podium : ['Nobody sank it. Brutal.']),
     '',
-    `Called it? +${CALL_POINTS.majority}. Second place? +${CALL_POINTS.runnerUp}. Today’s question is up now.`,
+    'Today’s level is up now.',
   ].join('\n');
 }
 
-/** Closes a round, scores every call and posts the results under its post. */
+/** Closes a round and pins its results under the post. */
 export async function closeRound(round: Round): Promise<void> {
   if (round.status === 'closed') return;
-  const tally = await store.getTally(round.dayKey, round.question.options.length);
-  const votes = await store.getAllVotes(round.dayKey);
-
-  const points = new Map<string, number>();
-  for (const [username, vote] of votes) {
-    const earned = scoreCall(vote.call, tally);
-    points.set(username, earned);
-    await store.addScore(username, earned, earned === CALL_POINTS.majority);
-  }
-  await store.savePoints(round.dayKey, points);
   await store.markClosed(round.dayKey);
-
   try {
     const comment = await reddit.submitComment({
       id: round.postId as `t3_${string}`,
-      text: resultsComment(round, tally, votes.size),
+      text: await resultsComment(round),
       runAs: 'APP',
     });
     await comment.distinguish(true);
   } catch (error) {
     console.error(`Could not post results for round ${round.dayKey}`, error);
   }
-}
-
-async function questionFor(dayNumber: number): Promise<Question> {
-  return (await store.takeQueuedQuestion()) ?? bankQuestionFor(dayNumber - 1);
 }
 
 /**
@@ -176,12 +144,13 @@ export async function startDay(now: Date): Promise<Round> {
   }
 
   const dayNumber = await store.nextDayNumber();
-  const question = await questionFor(dayNumber);
+  const level = (await store.takeQueuedLevel()) ?? builtInLevelFor(dayNumber);
+  const byline = level.author ? ` by u/${level.author}` : '';
   const post = await reddit.submitCustomPost({
-    title: `${GAME_NAME} #${dayNumber}: ${question.prompt}`,
+    title: `${GAME_NAME} #${dayNumber}: ${level.name}${byline}`,
     entry: 'default',
   });
-  const round: Round = { dayKey: today, dayNumber, question, postId: post.id, status: 'open' };
+  const round: Round = { dayKey: today, dayNumber, level, postId: post.id, status: 'open' };
   await store.saveRound(round);
   return round;
 }

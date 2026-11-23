@@ -20,23 +20,13 @@
   "menu": {
     "items": [
       {
-        "label": "Hunch: open today's round",
-        "description": "Close yesterday and open today's question now",
+        "label": "One Shot: open today's level",
+        "description": "Close yesterday and open today's level now",
         "location": "subreddit",
         "forUserType": "moderator",
         "endpoint": "/internal/menu/start-today"
-      },
-      {
-        "label": "Hunch: queue a question",
-        "description": "Add your own question to the daily queue",
-        "location": "subreddit",
-        "forUserType": "moderator",
-        "endpoint": "/internal/menu/queue-question"
       }
     ]
-  },
-  "forms": {
-    "queueQuestion": "/internal/form/queue-question"
   },
   "triggers": {
     "onAppInstall": "/internal/triggers/on-app-install"

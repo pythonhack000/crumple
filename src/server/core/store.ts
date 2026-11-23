@@ -1,18 +1,15 @@
 import { redis } from '@devvit/web/server';
-import type { DayStatus, LeaderRow, Question } from '../../shared/api';
+import type { LeaderRow, MyRound, RoundStatus } from '../../shared/api';
+import type { Level, Point } from '../../shared/level';
+import { parseLevel } from '../../shared/level';
 
 /** A stored round. One per UTC day. */
 export type Round = {
   dayKey: string;
   dayNumber: number;
-  question: Question;
+  level: Level;
   postId: string;
-  status: DayStatus;
-};
-
-export type Vote = {
-  pick: number;
-  call: number;
+  status: RoundStatus;
 };
 
 export type PlayerRecord = {
@@ -20,20 +17,23 @@ export type PlayerRecord = {
   bestStreak: number;
   lastDay: string | undefined;
   total: number;
-  played: number;
-  calledRight: number;
 };
+
+/** Sinking paths kept per round for the ghost overlay. */
+export const MAX_GHOSTS = 60;
 
 const key = {
   current: 'current',
   dayCount: 'day-count',
   leaders: 'leaders',
-  queue: 'queue',
-  round: (dayKey: string) => `round:${dayKey}`,
+  levelQueue: 'level-queue',
+  round: (day: string) => `round:${day}`,
   postRound: (postId: string) => `post:${postId}`,
-  votes: (dayKey: string) => `votes:${dayKey}`,
-  tally: (dayKey: string) => `tally:${dayKey}`,
-  points: (dayKey: string) => `points:${dayKey}`,
+  attempts: (day: string) => `attempts:${day}`,
+  sunk: (day: string) => `sunk:${day}`,
+  board: (day: string) => `board:${day}`,
+  ghosts: (day: string) => `ghosts:${day}`,
+  holesInOne: (day: string) => `hio:${day}`,
   player: (username: string) => `player:${username}`,
 };
 
@@ -42,57 +42,35 @@ const toInt = (value: string | undefined): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-function parseQuestion(raw: string | undefined): Question | undefined {
+function parseJson(raw: string | undefined): unknown {
   if (!raw) return undefined;
   try {
-    const value: unknown = JSON.parse(raw);
-    if (
-      typeof value === 'object' &&
-      value !== null &&
-      'prompt' in value &&
-      'options' in value &&
-      typeof value.prompt === 'string' &&
-      Array.isArray(value.options) &&
-      value.options.every((option: unknown) => typeof option === 'string')
-    ) {
-      return { prompt: value.prompt, options: value.options };
-    }
+    return JSON.parse(raw);
   } catch (error) {
-    console.error('Stored question is not valid JSON', error);
+    console.error('Stored value is not valid JSON', error);
+    return undefined;
   }
-  return undefined;
 }
 
-function parseVote(raw: string | undefined): Vote | undefined {
-  if (!raw) return undefined;
-  try {
-    const value: unknown = JSON.parse(raw);
-    if (
-      typeof value === 'object' &&
-      value !== null &&
-      'pick' in value &&
-      'call' in value &&
-      typeof value.pick === 'number' &&
-      typeof value.call === 'number'
-    ) {
-      return { pick: value.pick, call: value.call };
-    }
-  } catch (error) {
-    console.error('Stored vote is not valid JSON', error);
-  }
-  return undefined;
+function parsePath(raw: string | undefined): Point[] | undefined {
+  const value = parseJson(raw);
+  if (!Array.isArray(value)) return undefined;
+  return value.filter(
+    (point): point is Point =>
+      typeof point === 'object' && point !== null && typeof point.x === 'number' && typeof point.y === 'number'
+  );
 }
 
 // Rounds
 
 export async function getRound(dayKey: string): Promise<Round | undefined> {
   const fields = await redis.hGetAll(key.round(dayKey));
-  const question = parseQuestion(fields.question);
-  if (!question || !fields.postId) return undefined;
+  const level = parseLevel(parseJson(fields.level));
+  if (!level || !fields.postId) return undefined;
   return {
     dayKey,
     dayNumber: toInt(fields.dayNumber),
-    question,
+    level,
     postId: fields.postId,
     status: fields.status === 'closed' ? 'closed' : 'open',
   };
@@ -114,7 +92,7 @@ export async function nextDayNumber(): Promise<number> {
 export async function saveRound(round: Round): Promise<void> {
   await redis.hSet(key.round(round.dayKey), {
     dayNumber: String(round.dayNumber),
-    question: JSON.stringify(round.question),
+    level: JSON.stringify(round.level),
     postId: round.postId,
     status: round.status,
   });
@@ -126,52 +104,69 @@ export async function markClosed(dayKey: string): Promise<void> {
   await redis.hSet(key.round(dayKey), { status: 'closed' });
 }
 
-// Votes
+// Shots
 
-export async function getVote(dayKey: string, username: string): Promise<Vote | undefined> {
-  return parseVote(await redis.hGet(key.votes(dayKey), username));
+type SinkRecord = { attempt: number; stars: number; score: number };
+
+function isSinkRecord(value: unknown): value is SinkRecord {
+  if (typeof value !== 'object' || value === null) return false;
+  const { attempt, stars, score } = value as Record<string, unknown>;
+  return typeof attempt === 'number' && typeof stars === 'number' && typeof score === 'number';
 }
 
-/** Stores a vote once; returns false when the player already voted. */
-export async function addVote(dayKey: string, username: string, vote: Vote): Promise<boolean> {
-  const added = await redis.hSetNX(key.votes(dayKey), username, JSON.stringify(vote));
+export async function getMyRound(dayKey: string, username: string): Promise<MyRound> {
+  const [attempts, sunkRaw] = await Promise.all([
+    redis.hGet(key.attempts(dayKey), username),
+    redis.hGet(key.sunk(dayKey), username),
+  ]);
+  const sunk = parseJson(sunkRaw);
+  return {
+    attempts: toInt(attempts),
+    sunk: isSinkRecord(sunk) ? { attempt: sunk.attempt, stars: sunk.stars, score: sunk.score } : null,
+  };
+}
+
+/** Counts one more shot and returns the new attempt number. */
+export async function addAttempt(dayKey: string, username: string): Promise<number> {
+  return redis.hIncrBy(key.attempts(dayKey), username, 1);
+}
+
+/** Records the first sink; returns false if the player already sank this round. */
+export async function recordSink(
+  dayKey: string,
+  username: string,
+  sunk: { attempt: number; stars: number; score: number },
+  path: Point[]
+): Promise<boolean> {
+  const added = await redis.hSetNX(key.sunk(dayKey), username, JSON.stringify(sunk));
   if (added === 0) return false;
-  await redis.hIncrBy(key.tally(dayKey), String(vote.pick), 1);
+  await redis.zAdd(key.board(dayKey), { member: username, score: sunk.score });
+  if (sunk.attempt === 1) await redis.incrBy(key.holesInOne(dayKey), 1);
+  if ((await redis.hLen(key.ghosts(dayKey))) < MAX_GHOSTS) {
+    await redis.hSet(key.ghosts(dayKey), { [username]: JSON.stringify(path) });
+  }
   return true;
 }
 
-export async function getAllVotes(dayKey: string): Promise<Map<string, Vote>> {
-  const raw = await redis.hGetAll(key.votes(dayKey));
-  const votes = new Map<string, Vote>();
-  for (const [username, value] of Object.entries(raw)) {
-    const vote = parseVote(value);
-    if (vote) votes.set(username, vote);
-  }
-  return votes;
-}
-
-export async function getTally(dayKey: string, optionCount: number): Promise<number[]> {
-  const raw = await redis.hGetAll(key.tally(dayKey));
-  return Array.from({ length: optionCount }, (_, index) => toInt(raw[String(index)]));
-}
-
 export async function countPlayers(dayKey: string): Promise<number> {
-  return redis.hLen(key.votes(dayKey));
+  return redis.hLen(key.attempts(dayKey));
 }
 
-// Points
-
-export async function savePoints(dayKey: string, points: Map<string, number>): Promise<void> {
-  if (points.size === 0) return;
-  await redis.hSet(
-    key.points(dayKey),
-    Object.fromEntries([...points].map(([username, value]) => [username, String(value)]))
-  );
+export async function countHolesInOne(dayKey: string): Promise<number> {
+  return toInt(await redis.get(key.holesInOne(dayKey)));
 }
 
-export async function getPoints(dayKey: string, username: string): Promise<number | null> {
-  const value = await redis.hGet(key.points(dayKey), username);
-  return value === undefined ? null : toInt(value);
+export async function getGhosts(dayKey: string, exceptUsername: string | undefined): Promise<Point[][]> {
+  const raw = await redis.hGetAll(key.ghosts(dayKey));
+  return Object.entries(raw)
+    .filter(([username]) => username !== exceptUsername)
+    .map(([, value]) => parsePath(value))
+    .filter((path): path is Point[] => path !== undefined && path.length > 1);
+}
+
+export async function getDayLeaders(dayKey: string, count: number): Promise<LeaderRow[]> {
+  const rows = await redis.zRange(key.board(dayKey), 0, count - 1, { by: 'rank', reverse: true });
+  return rows.map((row) => ({ username: row.member, score: row.score }));
 }
 
 // Players
@@ -181,27 +176,21 @@ export async function getPlayer(username: string): Promise<PlayerRecord> {
   return {
     streak: toInt(fields.streak),
     bestStreak: toInt(fields.bestStreak),
-    lastDay: fields.lastDay,
+    lastDay: fields.lastDay || undefined,
     total: toInt(fields.total),
-    played: toInt(fields.played),
-    calledRight: toInt(fields.calledRight),
   };
 }
 
-export async function savePlayer(username: string, player: PlayerRecord): Promise<void> {
+export async function savePlayerStreak(username: string, player: PlayerRecord): Promise<void> {
   await redis.hSet(key.player(username), {
     streak: String(player.streak),
     bestStreak: String(player.bestStreak),
     lastDay: player.lastDay ?? '',
-    total: String(player.total),
-    played: String(player.played),
-    calledRight: String(player.calledRight),
   });
 }
 
-export async function addScore(username: string, points: number, calledRight: boolean): Promise<void> {
+export async function addToTotal(username: string, points: number): Promise<void> {
   await redis.hIncrBy(key.player(username), 'total', points);
-  if (calledRight) await redis.hIncrBy(key.player(username), 'calledRight', 1);
   await redis.zIncrBy(key.leaders, username, points);
 }
 
@@ -210,22 +199,16 @@ export async function getRank(username: string): Promise<number | null> {
   return rank === undefined ? null : size - rank;
 }
 
-export async function getLeaders(count: number): Promise<LeaderRow[]> {
-  const rows = await redis.zRange(key.leaders, 0, count - 1, { by: 'rank', reverse: true });
-  return rows.map((row) => ({ username: row.member, score: row.score }));
+// Player-made levels waiting to become a daily level
+
+export async function queueLevel(level: Level): Promise<number> {
+  await redis.zAdd(key.levelQueue, { member: JSON.stringify(level), score: Date.now() });
+  return redis.zCard(key.levelQueue);
 }
 
-// Moderator question queue
-
-export async function queueQuestion(question: Question): Promise<number> {
-  await redis.zAdd(key.queue, { member: JSON.stringify(question), score: Date.now() });
-  return redis.zCard(key.queue);
-}
-
-/** Takes the oldest queued question, if any. */
-export async function takeQueuedQuestion(): Promise<Question | undefined> {
-  const [first] = await redis.zRange(key.queue, 0, 0, { by: 'rank' });
+export async function takeQueuedLevel(): Promise<Level | undefined> {
+  const [first] = await redis.zRange(key.levelQueue, 0, 0, { by: 'rank' });
   if (!first) return undefined;
-  await redis.zRem(key.queue, [first.member]);
-  return parseQuestion(first.member);
+  await redis.zRem(key.levelQueue, [first.member]);
+  return parseLevel(parseJson(first.member));
 }

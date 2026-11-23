@@ -1,28 +1,22 @@
 import './index.css';
 
-import { StrictMode, useCallback, useEffect, useRef, useState } from 'react';
+import { StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type Phaser from 'phaser';
+import { navigateToPost, showLoginPrompt } from '@devvit/web/client';
+import type { InitResponse, LeaderRow, MyRound } from '../shared/api';
 import type { Level, Point } from '../shared/level';
-import { shotScore } from '../shared/level';
-import { builtInLevelFor } from '../shared/levels';
 import { createGame } from './oneshot/scene';
 import type { SceneData, ShotResult } from './oneshot/scene';
+import { useRound } from './oneshot/useRound';
 
 const MISS_RESTART_MS = 450;
-const LAUNCH_DAY = Date.UTC(2026, 10, 23);
-
-function todayNumber(): number {
-  return Math.floor((Date.now() - LAUNCH_DAY) / 86_400_000) + 1;
-}
-
-type Sunk = { attempt: number; stars: number; score: number; path: Point[] };
 
 function Stars({ got, of }: { got: number; of: number }) {
   return (
     <span aria-label={`${got} of ${of} stars`} className="tracking-[0.15em]">
       {Array.from({ length: of }, (_, i) => (
-        <span key={i} className={i < got ? 'text-coral' : 'text-ink/25'}>
+        <span key={i} className={i < got ? 'text-coral' : 'text-felt/30'}>
           ★
         </span>
       ))}
@@ -30,120 +24,172 @@ function Stars({ got, of }: { got: number; of: number }) {
   );
 }
 
-type ResultCardProps = {
-  sunk: Sunk;
-  level: Level;
+function Board({ leaders, username }: { leaders: LeaderRow[]; username: string | undefined }) {
+  if (leaders.length === 0) return null;
+  return (
+    <ol className="mt-3 flex flex-col text-sm">
+      {leaders.map((row, index) => (
+        <li
+          key={row.username}
+          className={`flex gap-3 border-t border-felt/15 py-1.5 ${row.username === username ? 'font-semibold text-coral' : ''}`}
+        >
+          <span className="w-4 tabular-nums text-felt/60">{index + 1}</span>
+          <span className="flex-1 truncate">u/{row.username}</span>
+          <span className="tabular-nums">{row.score}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+type CardProps = {
+  data: InitResponse;
+  sunk: NonNullable<MyRound['sunk']>;
   onPractice: () => void;
 };
 
-function ResultCard({ sunk, level, onPractice }: ResultCardProps) {
+function ResultCard({ data, sunk, onPractice }: CardProps) {
   const headline = sunk.attempt === 1 ? 'One shot. In.' : `In on shot ${sunk.attempt}.`;
+  const ghostLine =
+    data.ghosts.length > 0 ? `The faint lines are ${data.ghosts.length} other ways in.` : 'You’re the first one in today.';
   return (
-    <div className="absolute inset-x-3 bottom-3 rounded-2xl bg-ink p-5 text-felt shadow-[0_12px_0_-4px_rgba(18,48,42,0.25)]">
+    <div className="absolute inset-x-3 bottom-3 rounded-2xl bg-ink p-5 text-felt">
       <p className="font-display text-3xl font-bold leading-tight">{headline}</p>
       <p className="mt-1 flex items-baseline gap-3 text-lg">
-        <Stars got={sunk.stars} of={level.stars.length} />
+        <Stars got={sunk.stars} of={data.round.level.stars.length} />
         <span className="font-display text-2xl font-bold tabular-nums">{sunk.score}</span>
-        <span className="text-felt/70">points locked in</span>
+        <span className="text-felt/70">points</span>
       </p>
-      <button
-        type="button"
-        onClick={onPractice}
-        className="mt-4 h-12 w-full rounded-full bg-coral font-semibold text-ink"
-      >
-        Practice for more stars
-      </button>
+      <p className="mt-1 text-sm text-felt/70">{ghostLine}</p>
+      <Board leaders={data.leaders} username={data.me?.username} />
+      <div className="mt-4 flex gap-2">
+        <button type="button" onClick={onPractice} className="h-12 flex-1 rounded-full bg-coral font-semibold text-ink">
+          Practice for stars
+        </button>
+        {data.todayPostId && (
+          <button
+            type="button"
+            onClick={() => navigateToPost(data.todayPostId as `t3_${string}`)}
+            className="h-12 flex-1 rounded-full border-2 border-felt/40 font-semibold"
+          >
+            Today’s level
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
-export function App() {
-  const day = todayNumber();
-  const level = builtInLevelFor(day);
+type PlayProps = {
+  data: InitResponse;
+  reportShot: ReturnType<typeof useRound>['reportShot'];
+  shotError: string | null;
+};
+
+function Play({ data, reportShot, shotError }: PlayProps) {
   const holder = useRef<HTMLDivElement>(null);
   const game = useRef<Phaser.Game | null>(null);
-  const [attempt, setAttempt] = useState(1);
-  const [hasLaunched, setHasLaunched] = useState(false);
-  const [sunk, setSunk] = useState<Sunk | null>(null);
+  const [hasLaunched, setHasLaunched] = useState((data.mine?.attempts ?? 0) > 0);
   const [isPractice, setIsPractice] = useState(false);
   const [missFlash, setMissFlash] = useState(false);
+  const level: Level = data.round.level;
+  const sunk = data.mine?.sunk ?? null;
+  const isLoggedIn = data.me !== null;
+  const isClosed = data.round.status === 'closed';
 
-  // The scene reads these through refs so callbacks never go stale.
-  const attemptRef = useRef(attempt);
-  const lockedRef = useRef(false);
+  // Latest values for scene callbacks, which outlive renders.
+  const latest = useRef({ reportShot, ghosts: data.ghosts });
   useEffect(() => {
-    attemptRef.current = attempt;
-    lockedRef.current = sunk !== null;
-  }, [attempt, sunk]);
+    latest.current = { reportShot, ghosts: data.ghosts };
+  }, [reportShot, data.ghosts]);
 
-  const restartScene = useCallback((data: SceneData) => {
-    game.current?.scene.getScene('play')?.scene.restart(data);
-  }, []);
-
-  const sceneData = useCallback((): SceneData => {
-    const data: SceneData = {
+  useEffect(() => {
+    if (!holder.current) return;
+    const restart = (ghosts: Point[][]) => game.current?.scene.getScene('play')?.scene.restart(makeData(ghosts));
+    const makeData = (ghosts: Point[][]): SceneData => ({
       level,
-      ghosts: [],
+      ghosts,
       onLaunch: () => setHasLaunched(true),
       onResult: (result: ShotResult) => {
+        const report = isLoggedIn && !isClosed ? latest.current.reportShot(result) : Promise.resolve(undefined);
         if (result.sunk) {
-          if (!lockedRef.current) {
-            setSunk({
-              attempt: attemptRef.current,
-              stars: result.stars,
-              score: shotScore(attemptRef.current, result.stars),
-              path: result.path,
-            });
-          }
+          // Redraw with everyone's paths once the server confirms the sink.
+          void report.then((response) => {
+            if (response?.ghosts.length) restart(response.ghosts);
+          });
           return;
         }
         setMissFlash(true);
         window.setTimeout(() => {
           setMissFlash(false);
-          if (!lockedRef.current) setAttempt((value) => value + 1);
-          restartScene(data);
+          restart(latest.current.ghosts);
         }, MISS_RESTART_MS);
       },
-    };
-    return data;
-  }, [level, restartScene]);
-
-  useEffect(() => {
-    if (!holder.current) return;
-    game.current = createGame(holder.current, sceneData());
+    });
+    game.current = createGame(holder.current, makeData(latest.current.ghosts));
     return () => {
       game.current?.destroy(true);
       game.current = null;
     };
-  }, [sceneData]);
+  }, [level, isLoggedIn, isClosed]);
 
   const handlePractice = () => {
     setIsPractice(true);
-    restartScene(sceneData());
+    game.current?.scene.getScene('play')?.scene.restart({ ...game.current.scene.getScene('play')?.sys.settings.data });
   };
 
-  const showCard = sunk !== null && !isPractice;
-  const shotLabel = sunk ? (isPractice ? 'Practice' : `In on shot ${sunk.attempt}`) : `Shot ${attempt}`;
+  const attempts = data.mine?.attempts ?? 0;
+  let status = `Shot ${attempts + 1}`;
+  if (sunk) status = isPractice ? 'Practice' : `In on shot ${sunk.attempt}`;
+  if (missFlash) status = 'Missed';
 
   return (
     <main className="relative mx-auto flex h-screen max-w-[480px] flex-col bg-felt text-ink select-none">
-      <header className="flex items-baseline justify-between px-4 pt-3 pb-1">
-        <h1 className="font-display text-xl font-bold">
-          One Shot #{day} <span className="font-normal text-ink-soft">{level.name}</span>
+      <header className="flex items-baseline justify-between gap-3 px-4 pt-3 pb-1">
+        <h1 className="truncate font-display text-xl font-bold">
+          #{data.round.dayNumber} <span className="font-normal text-ink-soft">{level.name}</span>
         </h1>
-        <p className={`tabular-nums font-semibold transition-colors ${missFlash ? 'text-coral' : ''}`}>
-          {missFlash ? 'Missed' : shotLabel}
-        </p>
+        <p className={`shrink-0 font-semibold tabular-nums ${missFlash ? 'text-coral' : ''}`}>{status}</p>
       </header>
+      {!isLoggedIn && (
+        <button
+          type="button"
+          onClick={showLoginPrompt}
+          className="mx-3 mb-1 h-10 rounded-full bg-ink text-sm font-semibold text-felt"
+        >
+          Log in to get on the board
+        </button>
+      )}
       <div ref={holder} className="relative min-h-0 flex-1 touch-none" />
       {!hasLaunched && (
         <p className="pointer-events-none absolute inset-x-0 bottom-6 text-center text-ink-soft">
           Drag anywhere, pull back, let go
         </p>
       )}
-      {showCard && <ResultCard sunk={sunk} level={level} onPractice={handlePractice} />}
+      {shotError && (
+        <p role="alert" className="absolute inset-x-3 top-12 rounded-lg bg-ink px-3 py-2 text-sm text-felt">
+          {shotError}
+        </p>
+      )}
+      {sunk && !isPractice && <ResultCard data={data} sunk={sunk} onPractice={handlePractice} />}
     </main>
   );
+}
+
+export function App() {
+  const { state, reload, reportShot, shotError } = useRound();
+  if (state.status === 'loading') return <p className="p-6 text-ink-soft">Setting up today’s level…</p>;
+  if (state.status === 'error') {
+    return (
+      <main className="flex flex-col gap-3 p-6">
+        <p>{state.message}</p>
+        <button type="button" className="h-11 self-start rounded-full bg-ink px-5 font-semibold text-felt" onClick={() => void reload()}>
+          Try again
+        </button>
+      </main>
+    );
+  }
+  return <Play data={state.data} reportShot={reportShot} shotError={shotError} />;
 }
 
 createRoot(document.getElementById('root')!).render(

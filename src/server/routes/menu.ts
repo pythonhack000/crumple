@@ -17,26 +17,3 @@ menu.post('/start-today', async (c) => {
     return c.json<UiResponse>({ showToast: 'Could not start today’s round' }, 400);
   }
 });
-
-menu.post('/queue-question', async (c) => {
-  return c.json<UiResponse>(
-    {
-      showForm: {
-        name: 'queueQuestion',
-        form: {
-          title: 'Queue a Hunch question',
-          description: 'Queued questions run before the built-in ones, oldest first.',
-          fields: [
-            { name: 'prompt', label: 'Question', type: 'string', required: true },
-            { name: 'option1', label: 'Option 1', type: 'string', required: true },
-            { name: 'option2', label: 'Option 2', type: 'string', required: true },
-            { name: 'option3', label: 'Option 3 (optional)', type: 'string' },
-            { name: 'option4', label: 'Option 4 (optional)', type: 'string' },
-          ],
-          acceptLabel: 'Queue it',
-        },
-      },
-    },
-    200
-  );
-});

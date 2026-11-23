@@ -1,29 +1,23 @@
-export type Question = {
-  prompt: string;
-  options: string[];
-};
+import type { Level, Point } from './level';
 
-export type DayStatus = 'open' | 'closed';
+export type RoundStatus = 'open' | 'closed';
 
-/** One day's round, as one player sees it. */
-export type DayView = {
+/** The day's round, as one player sees it. */
+export type RoundView = {
   dayKey: string;
   dayNumber: number;
-  question: Question;
-  status: DayStatus;
-  players: number;
-  /** ISO time the round closes and the crowd's answer is revealed. */
+  level: Level;
+  status: RoundStatus;
+  /** ISO time this round closes. */
   closesAt: string;
-  myPick: number | null;
-  myCall: number | null;
-  /** Revealed only once the round is closed. */
-  result: DayResult | null;
+  players: number;
+  holesInOne: number;
 };
 
-export type DayResult = {
-  shares: number[];
-  majority: number[];
-  myPoints: number | null;
+/** One player's progress on one round. */
+export type MyRound = {
+  attempts: number;
+  sunk: { attempt: number; stars: number; score: number } | null;
 };
 
 export type PlayerStats = {
@@ -31,8 +25,6 @@ export type PlayerStats = {
   streak: number;
   bestStreak: number;
   total: number;
-  played: number;
-  calledRight: number;
   rank: number | null;
 };
 
@@ -43,22 +35,31 @@ export type LeaderRow = {
 
 export type InitResponse = {
   type: 'init';
-  day: DayView;
+  round: RoundView;
   me: PlayerStats | null;
+  mine: MyRound | null;
+  /** Today's best, highest first. */
   leaders: LeaderRow[];
-  /** Post of the round that is open right now, when it is not this one. */
+  /** Other players' sinking paths; sent once the player has sunk or the round closed. */
+  ghosts: Point[][];
+  /** Post of the round that is open now, when it is not this one. */
   todayPostId: string | null;
 };
 
-export type VoteRequest = {
-  pick: number;
-  call: number;
+export type ShotRequest = {
+  sunk: boolean;
+  stars: number;
+  path: Point[];
 };
 
-export type VoteResponse = {
-  type: 'vote';
-  day: DayView;
+export type ShotResponse = {
+  type: 'shot';
+  mine: MyRound;
   me: PlayerStats;
+  leaders: LeaderRow[];
+  ghosts: Point[][];
+  /** False once the player already sank this round: the shot was practice. */
+  counted: boolean;
 };
 
 export type ErrorResponse = {
