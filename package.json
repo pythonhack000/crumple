@@ -6,11 +6,10 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "deploy": "npm run test:types && npm run lint && devvit upload",
-    "dev": "devvit playtest",
-    "launch": "npm run deploy && devvit publish",
+    "deploy": "npm run test:types && npm run lint && NODE_OPTIONS=\"--require ./tools/reddit-dns.cjs\" devvit upload",
+    "dev": "NODE_OPTIONS=\"--require ./tools/reddit-dns.cjs\" devvit playtest",
     "lint": "eslint 'src/**/*.{ts,tsx}'",
-    "login": "devvit login",
+    "login": "NODE_OPTIONS=\"--require ./tools/reddit-dns.cjs\" devvit login",
     "prettier": "prettier --write .",
     "test:types": "tsc --build",
     "test:unit": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test \"src/**/*.test.ts\""
