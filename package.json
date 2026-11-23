@@ -12,7 +12,8 @@
     "login": "NODE_OPTIONS=\"--require ./tools/reddit-dns.cjs\" devvit login",
     "prettier": "prettier --write .",
     "test:types": "tsc --build",
-    "test:unit": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test \"src/**/*.test.ts\""
+    "test:unit": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test \"src/**/*.test.ts\"",
+    "check:levels": "tsx tools/check-levels.ts"
   },
   "engines": {
     "node": ">=24.0.0"
@@ -24,12 +25,15 @@
     "@hono/node-server": "2.1.6",
     "devvit": "0.15.4",
     "hono": "4.13.17",
+    "matter-js": "^0.20.0",
+    "phaser": "^3.90.0",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@tailwindcss/vite": "4.3.5",
+    "@types/matter-js": "^0.20.2",
     "@types/node": "^24.13.3",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
@@ -40,6 +44,7 @@
     "globals": "17.14.0",
     "prettier": "3.9.10",
     "tailwindcss": "4.3.5",
+    "tsx": "^4.23.15",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.2",
     "vite": "8.3.7"

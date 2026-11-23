@@ -58,5 +58,8 @@
     "reddit": {
       "enable": true
     }
+  },
+  "dev": {
+    "subreddit": "crowd_hunch_dev"
   }
 }
