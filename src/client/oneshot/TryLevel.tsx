@@ -35,6 +35,7 @@ export function TryLevel({ level, title, arts, username, onSunk, onClose }: TryL
       pile: [],
       arts,
       username,
+      material: 'paper',
       onLaunch: () => setMessage(''),
       onResult: (result) => {
         if (result.sunk) {

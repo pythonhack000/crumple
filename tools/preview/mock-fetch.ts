@@ -34,6 +34,7 @@ const pile = Array.from({ length: state === 'fresh' ? 0 : 18 }, (_, i) => ({
   owner: i % 6 === 0 ? 'Afraid-Emotion-6182' : `player${i}`,
 }));
 const arts: Record<string, string> = {};
+let material = 'paper';
 const ghosts = state === 'sunk' ? [ghost(-20), ghost(0), ghost(25)] : [];
 
 const community = [3, 5, 7].map((n, i) => ({
@@ -52,7 +53,7 @@ window.fetch = async (input, init) => {
     return new Response(JSON.stringify({ type: 'levels', levels: community }), { status: 200 });
   }
   if (url.includes('/api/init')) {
-    const body = { type: 'init', round, me: state === 'guest' ? null : me, mine: state === 'guest' ? null : mine, leaders, ghosts, pile, arts, todayPostId: null };
+    const body = { type: 'init', round, me: state === 'guest' ? null : me, mine: state === 'guest' ? null : mine, leaders, ghosts, pile, arts, material, todayPostId: null };
     return new Response(JSON.stringify(body), { status: 200 });
   }
   if (url.includes('/api/shot')) {
@@ -64,10 +65,11 @@ window.fetch = async (input, init) => {
     return new Response(JSON.stringify(body), { status: 200 });
   }
   if (url.includes('/api/ball')) {
-    const { art } = JSON.parse(String(init?.body ?? '{}'));
-    if (art) arts['Afraid-Emotion-6182'] = art;
+    const body = JSON.parse(String(init?.body ?? '{}'));
+    if (body.art) arts['Afraid-Emotion-6182'] = body.art;
     else delete arts['Afraid-Emotion-6182'];
-    return new Response(JSON.stringify({ type: 'ball', art }), { status: 200 });
+    material = body.material ?? 'paper';
+    return new Response(JSON.stringify({ type: 'ball', art: body.art, material }), { status: 200 });
   }
   return new Response('{}', { status: 404 });
 };

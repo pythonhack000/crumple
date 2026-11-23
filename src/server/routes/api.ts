@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { context, reddit } from '@devvit/web/server';
 import type { BallArtResponse, ErrorResponse, InitResponse, PileBall, ShotResponse } from '../../shared/api';
-import { parseBallArt } from '../../shared/ball-art';
+import { parseBallArt, parseMaterial } from '../../shared/ball-art';
 import { parseShot } from '../../shared/shot';
 import { buildRoundView, getStats, recordShot, ShotError } from '../core/rounds';
 import * as store from '../core/store';
@@ -48,8 +48,8 @@ api.get('/init', async (c) => {
       store.getPile(round.dayKey, username),
       todaysPostId(postId),
     ]);
-    const arts = await artsFor(pile, username);
-    return c.json<InitResponse>({ type: 'init', round: view, me, mine, leaders, ghosts, pile, arts, todayPostId });
+    const [arts, material] = await Promise.all([artsFor(pile, username), store.getBallMaterial(username)]);
+    return c.json<InitResponse>({ type: 'init', round: view, me, mine, leaders, ghosts, pile, arts, material, todayPostId });
   } catch (error) {
     console.error(`Init failed for post ${postId}`, error);
     return c.json(fail('Could not load today’s level. Try again in a moment.'), 500);
@@ -90,12 +90,13 @@ api.post('/ball', async (c) => {
   const username = await reddit.getCurrentUsername();
   if (!username) return c.json(fail('Log in to Reddit to draw your ball.'), 401);
   const body: unknown = await c.req.json().catch(() => undefined);
-  const raw = typeof body === 'object' && body !== null && 'art' in body ? body.art : undefined;
-  const art = raw === null ? null : parseBallArt(raw);
+  const fields = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+  const art = fields.art === null ? null : parseBallArt(fields.art);
   if (art === undefined) return c.json(fail('That drawing could not be saved. Try a simpler one.'), 400);
+  const material = parseMaterial(fields.material);
   try {
-    await store.setBallArt(username, art);
-    return c.json<BallArtResponse>({ type: 'ball', art });
+    await Promise.all([store.setBallArt(username, art), store.setBallMaterial(username, material)]);
+    return c.json<BallArtResponse>({ type: 'ball', art, material });
   } catch (error) {
     console.error(`Saving ball art failed for ${username}`, error);
     return c.json(fail('Could not save your ball. Try again.'), 500);

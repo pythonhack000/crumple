@@ -2,6 +2,8 @@ import { redis } from '@devvit/web/server';
 import type { LeaderRow, MyRound, PileBall, RoundStatus } from '../../shared/api';
 import type { Level, Point } from '../../shared/level';
 import { parseLevel } from '../../shared/level';
+import { parseMaterial } from '../../shared/ball-art';
+import type { Material } from '../../shared/ball-art';
 
 /** A stored round. One per UTC day. */
 export type Round = {
@@ -28,6 +30,7 @@ const key = {
   leaders: 'leaders',
   levelQueue: 'level-queue',
   ballArt: 'ball-art',
+  ballMaterial: 'ball-material',
   round: (day: string) => `round:${day}`,
   postRound: (postId: string) => `post:${postId}`,
   attempts: (day: string) => `attempts:${day}`,
@@ -316,4 +319,12 @@ export async function claimDailyJob(job: string, dayKey: string): Promise<boolea
   if (await redis.get(claimKey)) return false;
   await redis.set(claimKey, String(Date.now()));
   return true;
+}
+
+export async function setBallMaterial(username: string, material: Material): Promise<void> {
+  await redis.hSet(key.ballMaterial, { [username]: material });
+}
+
+export async function getBallMaterial(username: string | undefined): Promise<Material> {
+  return username ? parseMaterial(await redis.hGet(key.ballMaterial, username)) : 'paper';
 }

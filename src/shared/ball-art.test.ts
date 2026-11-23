@@ -22,3 +22,10 @@ test('parseBallArt rejects data that is not a PNG or not base64', () => {
 test('parseBallArt rejects oversized images', () => {
   assert.equal(parseBallArt(`${BALL_ART.prefix}iVBORw${'A'.repeat(BALL_ART.maxBytes * 2)}`), undefined);
 });
+
+test('parseMaterial accepts known materials and falls back to paper', async () => {
+  const { parseMaterial } = await import('./ball-art.ts');
+  assert.equal(parseMaterial('tin'), 'tin');
+  assert.equal(parseMaterial('gold'), 'paper');
+  assert.equal(parseMaterial(undefined), 'paper');
+});

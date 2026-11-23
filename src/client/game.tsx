@@ -5,11 +5,13 @@ import { createRoot } from 'react-dom/client';
 import type Phaser from 'phaser';
 import { navigateToPost, showLoginPrompt } from '@devvit/web/client';
 import type { InitResponse, LeaderRow, MyRound } from '../shared/api';
+import type { Material } from '../shared/ball-art';
 import type { Level } from '../shared/level';
 import { PHYSICS } from '../shared/sim';
 import { createGame } from './oneshot/scene';
 import type { SceneData, ShotResult } from './oneshot/scene';
-import { isMuted, setMuted } from './oneshot/audio';
+import { setMaterial } from './oneshot/audio';
+import { Settings } from './oneshot/Settings';
 import { BallEditor } from './oneshot/BallEditor';
 import { Community } from './oneshot/Community';
 import { LevelEditor } from './oneshot/LevelEditor';
@@ -125,11 +127,13 @@ function Play({ data, reportShot, shotError }: PlayProps) {
   const [hasLaunched, setHasLaunched] = useState((data.mine?.attempts ?? 0) > 0);
   const [isPractice, setIsPractice] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
-  const [muted, setMutedState] = useState(isMuted());
-  const toggleSound = () => {
-    setMuted(!muted);
-    setMutedState(!muted);
-  };
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [material, setMaterialState] = useState(data.material);
+  const materialRef = useRef(material);
+  useEffect(() => {
+    setMaterial(material);
+    materialRef.current = material;
+  }, [material]);
   const level: Level = data.round.level;
   const sunk = data.mine?.sunk ?? null;
   const isLoggedIn = data.me !== null;
@@ -159,6 +163,7 @@ function Play({ data, reportShot, shotError }: PlayProps) {
       pile: table.current.pile,
       arts: table.current.arts,
       username,
+      material: materialRef.current,
       onLaunch: () => setHasLaunched(true),
       onResult: (result: ShotResult) => {
         const counts = !latest.current.isPractice && isLoggedIn && !isClosed;
@@ -221,14 +226,16 @@ function Play({ data, reportShot, shotError }: PlayProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [level, isLoggedIn, isClosed]);
 
-  const handleArtSaved = async (art: string | null) => {
+  const handleArtSaved = async (art: string | null, chosen: Material) => {
     setIsDrawing(false);
     setMyArt(art);
+    setMaterialState(chosen);
     if (!username) return;
     const rest = Object.fromEntries(Object.entries(table.current.arts).filter(([name]) => name !== username));
     const mine = art ? await decodeArts({ [username]: art }) : {};
     table.current = { ...table.current, arts: { ...rest, ...mine } };
     setArtImages(table.current.arts);
+    materialRef.current = chosen;
     restart.current();
   };
 
@@ -255,9 +262,7 @@ function Play({ data, reportShot, shotError }: PlayProps) {
         <div className="mt-1 flex gap-5">
           <SketchLink onClick={() => setPanel('community')}>Levels</SketchLink>
           {isLoggedIn && <SketchLink onClick={() => setIsDrawing(true)}>{myArt ? 'Your ball' : 'Draw your ball'}</SketchLink>}
-          <SketchLink onClick={toggleSound} aria-pressed={!muted}>
-            {muted ? 'Sound off' : 'Sound on'}
-          </SketchLink>
+          <SketchLink onClick={() => setIsSettingsOpen(true)}>Settings</SketchLink>
         </div>
       </header>
       {!isLoggedIn && (
@@ -281,7 +286,12 @@ function Play({ data, reportShot, shotError }: PlayProps) {
         </p>
       )}
       {isDrawing && (
-        <BallEditor current={myArt} onClose={() => setIsDrawing(false)} onSaved={(art) => void handleArtSaved(art)} />
+        <BallEditor
+          current={myArt}
+          material={material}
+          onClose={() => setIsDrawing(false)}
+          onSaved={(art, chosen) => void handleArtSaved(art, chosen)}
+        />
       )}
       {sunk && !isPractice && !isDrawing && !panel && (
         <ResultCard data={data} sunk={sunk} onPractice={handlePractice} onBuild={() => {
@@ -289,6 +299,7 @@ function Play({ data, reportShot, shotError }: PlayProps) {
             setPanel('editor');
           }} />
       )}
+      {isSettingsOpen && <Settings onClose={() => setIsSettingsOpen(false)} />}
       {panel === 'community' && (
         <Community
           arts={artImages}

@@ -114,3 +114,22 @@ export function penStar(g: G, cx: number, cy: number, outer: number, rand: () =>
   });
   pts.forEach((p, i) => penLine(g, p, pts[(i + 1) % pts.length] ?? p, rand, 0.7));
 }
+
+/** An undrawn ball, shown as its material: smooth rubber, ribbed tin or a glass marble. */
+export function materialBall(g: G, r: number, material: 'rubber' | 'tin' | 'glass', ink: number) {
+  if (material === 'rubber') {
+    g.fillStyle(0xf2553a, 1).fillCircle(0, 0, r);
+    g.lineStyle(1.8, ink, 1).strokeCircle(0, 0, r);
+    g.lineStyle(2, 0xffffff, 0.8).beginPath().arc(0, 0, r * 0.6, -2.4, -1.4).strokePath();
+  } else if (material === 'tin') {
+    g.fillStyle(0xb9c1cd, 1).fillCircle(0, 0, r);
+    g.lineStyle(1, ink, 0.55);
+    for (const y of [-r * 0.45, 0, r * 0.45]) g.lineBetween(-r * 0.85, y, r * 0.85, y);
+    g.lineStyle(1.8, ink, 1).strokeCircle(0, 0, r);
+  } else {
+    g.fillStyle(0xcfe6f6, 0.85).fillCircle(0, 0, r);
+    g.lineStyle(1.4, 0x3d7fbf, 0.9).beginPath().arc(-r * 0.1, r * 0.1, r * 0.55, 0.3, 2.6).strokePath();
+    g.lineStyle(1.8, ink, 1).strokeCircle(0, 0, r);
+    g.fillStyle(0xffffff, 0.9).fillCircle(-r * 0.35, -r * 0.4, r * 0.2);
+  }
+}

@@ -1,3 +1,4 @@
+import type { Material } from './ball-art';
 import type { Level, Point } from './level';
 
 export type RoundStatus = 'open' | 'closed';
@@ -49,6 +50,8 @@ export type InitResponse = {
   pile: PileBall[];
   /** Drawn balls by username: the viewer's own and those of pile owners. */
   arts: Record<string, string>;
+  /** What the viewer's ball is made of. */
+  material: Material;
   /** Post of the round that is open now, when it is not this one. */
   todayPostId: string | null;
 };
@@ -81,6 +84,7 @@ export type ErrorResponse = {
 export type BallArtResponse = {
   type: 'ball';
   art: string | null;
+  material: Material;
 };
 
 /** A player-made level waiting for votes. */

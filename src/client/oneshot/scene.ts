@@ -1,11 +1,13 @@
 import Phaser from 'phaser';
 import type { PileBall } from '../../shared/api';
+import type { Material } from '../../shared/ball-art';
 import type { Level, Point } from '../../shared/level';
 import { WORLD } from '../../shared/level';
 import { createSim, gravityPerStep, launchVelocity, PHYSICS, previewArc, usableLeftovers } from '../../shared/sim';
 import type { Sim, SimEvent } from '../../shared/sim';
-import { paperBall, penBlock, penCircle, penLine, penStar, rectCorners, seeded } from './sketch';
+import { materialBall, paperBall, penBlock, penCircle, penLine, penStar, rectCorners, seeded } from './sketch';
 import { setAimPower, setHoldBreath, sfx, unlock } from './audio';
+import { getPrefs } from './prefs';
 import { COLORS } from './theme';
 
 export type ShotResult = { sunk: boolean; stars: number; path: Point[]; rest: Point | null };
@@ -19,6 +21,8 @@ export type SceneData = {
   arts: Record<string, HTMLImageElement>;
   /** The viewer, whose drawn ball is the one being thrown. */
   username: string | undefined;
+  /** What the viewer's ball is made of, for its look when undrawn. */
+  material: Material;
   onLaunch: () => void;
   onResult: (result: ShotResult) => void;
 };
@@ -91,9 +95,11 @@ export class PlayScene extends Phaser.Scene {
     if (myArt) {
       this.ball = this.add.image(ball.x, ball.y, myArt).setDisplaySize((PHYSICS.ballRadius + 3) * 2, (PHYSICS.ballRadius + 3) * 2);
     } else {
-      const paper = this.add.graphics({ x: ball.x, y: ball.y });
-      paperBall(paper, PHYSICS.ballRadius + 2, seeded(7), COLORS.coral, COLORS.ink);
-      this.ball = paper;
+      const plain = this.add.graphics({ x: ball.x, y: ball.y });
+      const material = this.setup.material;
+      if (material === 'paper') paperBall(plain, PHYSICS.ballRadius + 2, seeded(7), COLORS.coral, COLORS.ink);
+      else materialBall(plain, PHYSICS.ballRadius + 2, material, COLORS.ink);
+      this.ball = plain;
     }
     this.ballScale = this.ball.scale;
     this.tweens.add({ targets: this.ball, scale: this.ballScale * 1.1, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
@@ -370,7 +376,7 @@ export class PlayScene extends Phaser.Scene {
         const bumper = this.bumpers.find((b) => Phaser.Math.Distance.Between(b.x, b.y, x, y) < 60);
         if (bumper) this.tweens.add({ targets: bumper, scale: 1.25, duration: 90, yoyo: true });
         this.cameras.main.shake(90, 0.006);
-        sfx.bump(this.ball.y, WORLD.height);
+        sfx.bump();
         break;
       }
       case 'portal':
@@ -382,7 +388,7 @@ export class PlayScene extends Phaser.Scene {
         if (event.speed > 3) {
           this.tweens.add({ targets: this.ball, scaleX: this.ballScale * 1.25, scaleY: this.ballScale * 0.8, duration: 60, yoyo: true });
         }
-        if (event.speed > 1) sfx.hit(event.speed, this.ball.y, WORLD.height);
+        if (event.speed > 1) sfx.hit(event.speed);
         break;
       case 'cup': {
         const { cup } = this.setup.level;
@@ -411,7 +417,8 @@ export class PlayScene extends Phaser.Scene {
       this.time.delayedCall(350, () => this.setup.onResult(result));
       return;
     }
-    this.time.delayedCall(700, () => this.playReplay(result.path, () => this.setup.onResult(result)));
+    const report = () => this.setup.onResult(result);
+    this.time.delayedCall(700, () => (getPrefs().replay ? this.playReplay(result.path, report) : report()));
   }
 
   /** Slows time and leans the camera in when the ball is about to reach the bin. */
@@ -498,7 +505,7 @@ export class PlayScene extends Phaser.Scene {
     const { cup } = this.setup.level;
     const { position: p, velocity: v } = this.sim.ball;
     const isNearBin = Math.hypot(p.x - cup.x, p.y - cup.y) < SLOWMO_RADIUS && v.y > 0 && p.y < cup.y;
-    this.setSlowMo(isNearBin);
+    this.setSlowMo(isNearBin && getPrefs().slowMotion);
 
     this.accumulator += Math.min(delta, 100) * (this.isSlowMo ? SLOWMO_SCALE : 1);
     let steps = 0;

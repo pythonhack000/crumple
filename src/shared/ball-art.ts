@@ -15,3 +15,11 @@ export function parseBallArt(value: unknown): string | undefined {
   // PNG files start with the bytes 89 50 4E 47, which is "iVBORw" in base64.
   return body.startsWith('iVBORw') ? value : undefined;
 }
+
+/** What a ball is made of. It changes how the ball looks and sounds, never how it moves. */
+export const MATERIALS = ['paper', 'rubber', 'tin', 'glass'] as const;
+export type Material = (typeof MATERIALS)[number];
+
+export function parseMaterial(value: unknown): Material {
+  return MATERIALS.find((material) => material === value) ?? 'paper';
+}
