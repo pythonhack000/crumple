@@ -24,6 +24,8 @@ const TRAIL_LENGTH = 12;
 const MAX_STEPS_PER_FRAME = 5;
 const RULE_GAP = 24;
 const MARGIN_X = 26;
+const DRAW_IN_DELAY = 80;
+const DRAW_IN_STAGGER = 45;
 
 export class PlayScene extends Phaser.Scene {
   private sim!: Sim;
@@ -61,8 +63,10 @@ export class PlayScene extends Phaser.Scene {
     this.makeTextures();
     this.drawPaper();
     this.drawGhosts();
+    const before = this.children.list.length;
     this.drawLevel();
     this.drawPile();
+    this.drawIn(this.children.list.slice(before));
 
     this.trail = this.add.graphics();
     this.aim = this.add.graphics();
@@ -82,6 +86,23 @@ export class PlayScene extends Phaser.Scene {
     });
     this.input.on('pointerup', () => this.release());
     this.input.on('pointerupoutside', () => this.release());
+  }
+
+  /** Sketches the level in, piece by piece, as if someone is drawing it now. */
+  private drawIn(objects: Phaser.GameObjects.GameObject[]) {
+    objects.forEach((object, index) => {
+      if (!(object instanceof Phaser.GameObjects.Graphics)) return;
+      const scale = object.scale;
+      object.setAlpha(0).setScale(scale * 0.92);
+      this.tweens.add({
+        targets: object,
+        alpha: 1,
+        scale,
+        delay: DRAW_IN_DELAY + index * DRAW_IN_STAGGER,
+        duration: 180,
+        ease: 'Quad.easeOut',
+      });
+    });
   }
 
   private makeTextures() {

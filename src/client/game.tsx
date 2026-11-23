@@ -10,6 +10,7 @@ import { PHYSICS } from '../shared/sim';
 import { createGame } from './oneshot/scene';
 import type { SceneData, ShotResult } from './oneshot/scene';
 import { isMuted, setMuted } from './oneshot/audio';
+import { SketchButton } from './oneshot/Sketchy';
 import { useRound } from './oneshot/useRound';
 
 const MISS_RESTART_MS = 450;
@@ -57,7 +58,7 @@ function ResultCard({ data, sunk, onPractice }: CardProps) {
     data.ghosts.length > 0 ? `The faint lines are ${data.ghosts.length} other ways in.` : 'You’re the first one in today.';
   return (
     <div className="absolute inset-x-3 bottom-3 rounded-2xl bg-ink p-5 text-felt">
-      <p className="font-display text-3xl font-bold leading-tight">{headline}</p>
+      <p className="font-display text-4xl leading-tight">{headline}</p>
       <p className="mt-1 flex items-baseline gap-3 text-lg">
         <Stars got={sunk.stars} of={data.round.level.stars.length} />
         <span className="font-display text-2xl font-bold tabular-nums">{sunk.score}</span>
@@ -69,17 +70,13 @@ function ResultCard({ data, sunk, onPractice }: CardProps) {
       </p>
       <Board leaders={data.leaders} username={data.me?.username} />
       <div className="mt-4 flex gap-2">
-        <button type="button" onClick={onPractice} className="h-12 flex-1 rounded-full bg-coral font-semibold text-ink">
+        <SketchButton onClick={onPractice} className="flex-1">
           Practice for stars
-        </button>
+        </SketchButton>
         {data.todayPostId && (
-          <button
-            type="button"
-            onClick={() => navigateToPost(data.todayPostId as `t3_${string}`)}
-            className="h-12 flex-1 rounded-full border-2 border-felt/40 font-semibold"
-          >
+          <SketchButton onClick={() => navigateToPost(data.todayPostId as `t3_${string}`)} className="flex-1">
             Today’s level
-          </button>
+          </SketchButton>
         )}
       </div>
     </div>
@@ -177,7 +174,7 @@ function Play({ data, reportShot, shotError }: PlayProps) {
   return (
     <main className="relative mx-auto flex h-screen max-w-[480px] flex-col bg-felt text-ink select-none">
       <header className="flex items-baseline justify-between gap-3 px-4 pt-3 pb-1">
-        <h1 className="truncate font-display text-xl font-bold">
+        <h1 className="truncate font-display text-2xl">
           #{data.round.dayNumber} <span className="font-normal text-ink-soft">{level.name}</span>
         </h1>
         <div className="flex shrink-0 items-baseline gap-3">
