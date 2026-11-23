@@ -1,7 +1,7 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import type { Level, Point } from '../../shared/level';
 import { WORLD } from '../../shared/level';
-import { PHYSICS } from '../../shared/sim';
+import { PHYSICS } from '../../shared/physics';
 import { seeded } from './sketch';
 
 type SketchButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {

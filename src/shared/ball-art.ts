@@ -1,7 +1,7 @@
 /** Player-drawn balls are small PNG data URLs. */
 export const BALL_ART = {
-  size: 48,
-  maxBytes: 16 * 1024,
+  size: 72,
+  maxBytes: 32 * 1024,
   prefix: 'data:image/png;base64,',
 } as const;
 

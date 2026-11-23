@@ -1,6 +1,6 @@
 import type { Level, Point, Wall } from './level';
 import { WORLD } from './level';
-import { PHYSICS } from './sim';
+import { PHYSICS } from './physics';
 
 /** What the player grabbed in the level editor. */
 export type Pick =

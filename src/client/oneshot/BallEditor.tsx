@@ -1,41 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { BallArtResponse, ErrorResponse } from '../../shared/api';
-import { BALL_ART, MATERIALS } from '../../shared/ball-art';
+import { MATERIALS } from '../../shared/ball-art';
 import type { Material } from '../../shared/ball-art';
-import { MATERIAL_COLORS, MATERIAL_LABELS } from './theme';
 import { SketchButton } from './Sketchy';
+import { MATERIAL_LABELS } from './theme';
+import type { BallScene } from './workshop/ballScene';
 
-const CANVAS = 192;
-const BRUSH = 9;
-const PENS = [
-  { name: 'Blue pen', color: '#22408f' },
-  { name: 'Red pen', color: '#f2553a' },
-  { name: 'Black pen', color: '#1b1b1f' },
-  { name: 'Eraser', color: 'erase' },
-] as const;
-
-/** Shrinks the drawing, laid over the material, to a small round PNG. */
-function exportArt(source: HTMLCanvasElement, material: Material): string {
-  const out = document.createElement('canvas');
-  out.width = BALL_ART.size;
-  out.height = BALL_ART.size;
-  const context = out.getContext('2d');
-  if (!context) return '';
-  context.beginPath();
-  context.arc(BALL_ART.size / 2, BALL_ART.size / 2, BALL_ART.size / 2, 0, Math.PI * 2);
-  context.clip();
-  context.fillStyle = MATERIAL_COLORS[material];
-  context.fillRect(0, 0, BALL_ART.size, BALL_ART.size);
-  context.drawImage(source, 0, 0, BALL_ART.size, BALL_ART.size);
-  // A pen outline so the ball reads on paper.
-  context.strokeStyle = '#22408f';
-  context.lineWidth = 4;
-  context.beginPath();
-  context.arc(BALL_ART.size / 2, BALL_ART.size / 2, BALL_ART.size / 2 - 2, 0, Math.PI * 2);
-  context.stroke();
-  return out.toDataURL('image/png');
-}
+const PENS = ['#22408f', '#f2553a', '#1b1b1f', '#ffffff', '#f6c21c', '#2f9e6a'] as const;
+const BRUSHES = [8, 16, 30] as const;
 
 type BallEditorProps = {
   current: string | null;
@@ -44,65 +16,88 @@ type BallEditorProps = {
   onSaved: (art: string | null, material: Material) => void;
 };
 
+/** The ball workshop: a lit 3D ball you paint on directly. */
 export function BallEditor({ current, material: startMaterial, onClose, onSaved }: BallEditorProps) {
-  const [material, setMaterial] = useState<Material>(startMaterial);
   const canvas = useRef<HTMLCanvasElement>(null);
-  const last = useRef<{ x: number; y: number } | null>(null);
-  const [pen, setPen] = useState<string>(PENS[0].color);
+  const scene = useRef<BallScene | null>(null);
+  const [material, setMaterial] = useState<Material>(startMaterial);
+  const [pen, setPen] = useState<string>(PENS[0]);
+  const [isErasing, setIsErasing] = useState(false);
+  const [brush, setBrush] = useState<number>(BRUSHES[1]);
+  const [previews, setPreviews] = useState<Partial<Record<Material, string>>>({});
+  const [isReady, setIsReady] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const context = canvas.current?.getContext('2d');
-    if (!context) return;
-    if (!current) return;
-    const image = new Image();
-    image.onload = () => context.drawImage(image, 0, 0, CANVAS, CANVAS);
-    image.src = current;
-  }, [current]);
+    let isActive = true;
+    void (async () => {
+      try {
+        const [{ createBallScene }, art] = await Promise.all([
+          import('./workshop/ballScene'),
+          current
+            ? new Promise<HTMLImageElement | null>((resolve) => {
+                const image = new Image();
+                image.onload = () => resolve(image);
+                image.onerror = () => resolve(null);
+                image.src = current;
+              })
+            : Promise.resolve(null),
+        ]);
+        if (!isActive || !canvas.current) return;
+        const ball = createBallScene(canvas.current, startMaterial, art);
+        scene.current = ball;
+        // Real renders of each material for the picker.
+        const shots: Partial<Record<Material, string>> = {};
+        for (const option of MATERIALS) {
+          ball.setMaterial(option);
+          shots[option] = ball.snapshot();
+        }
+        ball.setMaterial(startMaterial);
+        setPreviews(shots);
+        setIsReady(true);
+      } catch (caught) {
+        console.error('The ball workshop could not start', caught);
+        if (isActive) setError('This device can’t show the 3D workshop. Try another browser.');
+      }
+    })();
+    return () => {
+      isActive = false;
+      scene.current?.dispose();
+      scene.current = null;
+    };
+    // The 3D scene is built once; later changes go through the scene's setters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const toCanvas = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    return { x: ((event.clientX - rect.left) / rect.width) * CANVAS, y: ((event.clientY - rect.top) / rect.height) * CANVAS };
+  const pickMaterial = (next: Material) => {
+    setMaterial(next);
+    scene.current?.setMaterial(next);
+  };
+  const pickPen = (color: string) => {
+    setPen(color);
+    setIsErasing(false);
+    scene.current?.setPen(color);
+  };
+  const pickEraser = () => {
+    setIsErasing(true);
+    scene.current?.setEraser();
+  };
+  const pickBrush = (size: number) => {
+    setBrush(size);
+    scene.current?.setBrush(size);
   };
 
-  const stroke = (to: { x: number; y: number }) => {
-    const context = canvas.current?.getContext('2d');
-    if (!context) return;
-    const from = last.current ?? to;
-    context.save();
-    context.beginPath();
-    context.arc(CANVAS / 2, CANVAS / 2, CANVAS / 2 - 2, 0, Math.PI * 2);
-    context.clip();
-    const isEraser = pen === PENS[3].color;
-    context.globalCompositeOperation = isEraser ? 'destination-out' : 'source-over';
-    context.strokeStyle = isEraser ? '#000' : pen;
-    context.lineWidth = isEraser ? BRUSH * 2.5 : BRUSH;
-    context.lineCap = 'round';
-    context.lineJoin = 'round';
-    context.beginPath();
-    context.moveTo(from.x, from.y);
-    context.lineTo(to.x, to.y);
-    context.stroke();
-    context.restore();
-    last.current = to;
-  };
-
-  const handleClear = () => {
-    const context = canvas.current?.getContext('2d');
-    if (!context) return;
-    context.clearRect(0, 0, CANVAS, CANVAS);
-  };
-
-  const save = async (art: string | null) => {
-    const chosen = material;
+  const save = async () => {
+    const art = scene.current?.snapshot();
+    if (!art) return;
     setIsSaving(true);
     setError(null);
     try {
       const response = await fetch('/api/ball', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ art, material: chosen }),
+        body: JSON.stringify({ art, material }),
       });
       const body = (await response.json().catch(() => undefined)) as BallArtResponse | ErrorResponse | undefined;
       if (!response.ok || !body || !('type' in body)) {
@@ -117,73 +112,93 @@ export function BallEditor({ current, material: startMaterial, onClose, onSaved 
   };
 
   return (
-    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-felt/95 p-5 text-ink" role="dialog" aria-label="Draw your ball">
-      <h2 className="-rotate-1 font-display text-3xl">Make your ball</h2>
-      <p className="max-w-xs text-center text-sm text-ink-soft">
-        Pick what it’s made of, then draw on it. It changes how it looks and sounds, not how it flies.
-      </p>
-      <canvas
-        ref={canvas}
-        width={CANVAS}
-        height={CANVAS}
-        className="h-48 w-48 touch-none rounded-full border-2 border-dashed border-ink/50"
-        style={{ background: MATERIAL_COLORS[material] }}
-        onPointerDown={(event) => {
-          event.currentTarget.setPointerCapture(event.pointerId);
-          last.current = null;
-          stroke(toCanvas(event));
-        }}
-        onPointerMove={(event) => {
-          if (event.buttons) stroke(toCanvas(event));
-        }}
-        onPointerUp={() => {
-          last.current = null;
-        }}
-      />
-      <div className="flex gap-2" role="radiogroup" aria-label="Material">
+    <div className="absolute inset-0 z-10 flex flex-col items-center gap-3 overflow-y-auto bg-felt px-4 py-3 text-ink" role="dialog" aria-label="Ball workshop">
+      <div className="flex w-full items-baseline justify-between">
+        <h2 className="-rotate-1 font-display text-3xl">Ball workshop</h2>
+        <button type="button" onClick={onClose} className="font-display text-lg underline decoration-dotted underline-offset-4">
+          Close
+        </button>
+      </div>
+      <div className="relative aspect-square w-full max-w-[19rem]">
+        <canvas ref={canvas} className="h-full w-full touch-none" aria-label="Your ball. Draw on it, or drag beside it to turn it." />
+        {!isReady && !error && (
+          <p className="absolute inset-0 flex items-center justify-center font-display text-xl text-ink-soft">Rolling out the ball…</p>
+        )}
+      </div>
+      <p className="-mt-2 text-center text-sm text-ink-soft">Draw on the ball. Drag beside it to turn it.</p>
+
+      <div className="flex gap-3" role="radiogroup" aria-label="Material">
         {MATERIALS.map((option) => (
           <button
             key={option}
             type="button"
             role="radio"
             aria-checked={material === option}
-            onClick={() => setMaterial(option)}
-            className={`flex flex-col items-center gap-1 font-display text-sm ${material === option ? 'text-coral' : 'text-ink-soft'}`}
+            onClick={() => pickMaterial(option)}
+            className={`flex flex-col items-center gap-0.5 font-display text-base transition-transform ${material === option ? 'scale-110 text-coral' : 'text-ink-soft'}`}
           >
-            <span
-              className={`h-8 w-8 rounded-full border-2 ${material === option ? 'border-coral' : 'border-ink/30'}`}
-              style={{ background: MATERIAL_COLORS[option] }}
-            />
+            {previews[option] ? (
+              <img src={previews[option]} alt="" className="h-12 w-12 drop-shadow-[0_3px_3px_rgba(34,64,143,0.25)]" />
+            ) : (
+              <span className="h-12 w-12" />
+            )}
             {MATERIAL_LABELS[option]}
           </button>
         ))}
       </div>
-      <div className="flex gap-3" role="radiogroup" aria-label="Pen">
-        {PENS.map((option) => (
+
+      <div className="flex flex-wrap items-center justify-center gap-2" role="radiogroup" aria-label="Pen">
+        {PENS.map((color) => (
           <button
-            key={option.name}
+            key={color}
             type="button"
             role="radio"
-            aria-checked={pen === option.color}
-            aria-label={option.name}
-            onClick={() => setPen(option.color)}
-            className={`h-10 w-10 rounded-full border-2 ${pen === option.color ? 'border-ink scale-110' : 'border-ink/25'}`}
-            style={{ background: option.color === 'erase' ? 'repeating-linear-gradient(45deg,#fbfaf6 0 4px,#d4e2f3 4px 8px)' : option.color }}
+            aria-checked={!isErasing && pen === color}
+            aria-label={`Pen ${color}`}
+            onClick={() => pickPen(color)}
+            className={`h-8 w-8 rounded-full border-2 transition-transform ${!isErasing && pen === color ? 'scale-125 border-ink' : 'border-ink/25'}`}
+            style={{ background: color }}
           />
         ))}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={isErasing}
+          aria-label="Eraser"
+          onClick={pickEraser}
+          className={`h-8 rounded-full border-2 px-2 font-display text-sm ${isErasing ? 'border-ink text-coral' : 'border-ink/25 text-ink-soft'}`}
+        >
+          Eraser
+        </button>
       </div>
+      <div className="flex items-center gap-4" role="radiogroup" aria-label="Brush size">
+        {BRUSHES.map((size) => (
+          <button
+            key={size}
+            type="button"
+            role="radio"
+            aria-checked={brush === size}
+            aria-label={`Brush ${size}`}
+            onClick={() => pickBrush(size)}
+            className="flex h-8 w-8 items-center justify-center"
+          >
+            <span className={`rounded-full ${brush === size ? 'bg-coral' : 'bg-ink/40'}`} style={{ width: 4 + size / 2.4, height: 4 + size / 2.4 }} />
+          </button>
+        ))}
+      </div>
+
       {error && (
-        <p role="alert" className="text-sm text-coral">
+        <p role="alert" className="text-center text-sm text-coral">
           {error}
         </p>
       )}
-      <div className="flex flex-wrap justify-center gap-2">
-        <SketchButton tone="ink" disabled={isSaving} onClick={() => canvas.current && void save(exportArt(canvas.current, material))}>
+      <div className="flex flex-wrap justify-center gap-2 pb-2">
+        <SketchButton tone="ink" disabled={!isReady || isSaving} onClick={() => void save()}>
           {isSaving ? 'Saving…' : 'Use this ball'}
         </SketchButton>
-        <SketchButton onClick={handleClear}>Clear</SketchButton>
-        <SketchButton onClick={() => void save(null)}>No drawing</SketchButton>
-        <SketchButton onClick={onClose}>Cancel</SketchButton>
+        <SketchButton disabled={!isReady} onClick={() => scene.current?.clear()}>
+          Start over
+        </SketchButton>
       </div>
     </div>
   );
