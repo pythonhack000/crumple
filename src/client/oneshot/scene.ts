@@ -12,6 +12,8 @@ import { COLORS } from './theme';
 
 export type ShotResult = { sunk: boolean; stars: number; path: Point[]; rest: Point | null; stats: ShotStats };
 
+const HINT = { size: 17, gap: 34, halfWidth: 80, fadeMs: 400, delayMs: 600 } as const;
+
 export type SceneData = {
   level: Level;
   ghosts: Point[][];
@@ -23,6 +25,8 @@ export type SceneData = {
   username: string | undefined;
   /** What the viewer's ball is made of, for its look when undrawn. */
   material: Material;
+  /** Shows how to throw, written above the ball, until the first drag. */
+  showHint?: boolean;
   onLaunch: () => void;
   onResult: (result: ShotResult) => void;
 };
@@ -48,6 +52,7 @@ export class PlayScene extends Phaser.Scene {
   private ball!: Phaser.GameObjects.Graphics | Phaser.GameObjects.Image;
   private aim!: Phaser.GameObjects.Graphics;
   private trail!: Phaser.GameObjects.Graphics;
+  private hint: Phaser.GameObjects.Text | null = null;
   private wind!: Phaser.GameObjects.Graphics;
   private bin!: Phaser.GameObjects.Graphics;
   private stars: Phaser.GameObjects.Graphics[] = [];
@@ -95,6 +100,7 @@ export class PlayScene extends Phaser.Scene {
     this.ball = this.makeBall(ball.x, ball.y);
     this.ballScale = this.ball.scale;
     this.tweens.add({ targets: this.ball, scale: this.ballScale * 1.1, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.hint = this.setup.showHint ? this.writeHint(ball) : null;
 
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       unlock();
@@ -103,6 +109,7 @@ export class PlayScene extends Phaser.Scene {
         return;
       }
       if (this.sim.status !== 'aiming') return;
+      this.hideHint();
       this.dragStart = { x: pointer.worldX, y: pointer.worldY };
       this.dragNow = this.dragStart;
     });
@@ -162,6 +169,32 @@ export class PlayScene extends Phaser.Scene {
   }
 
   /** Lined notebook paper with a margin. */
+  /** The how-to line sits above the ball, or below it when the ball starts near the top. */
+  private writeHint(ball: Point) {
+    const hasRoomAbove = ball.y > HINT.gap + HINT.size * 2;
+    const y = hasRoomAbove ? ball.y - HINT.gap : ball.y + HINT.gap;
+    const x = Phaser.Math.Clamp(ball.x, HINT.halfWidth, WORLD.width - HINT.halfWidth);
+    const text = this.add
+      .text(x, y, 'Drag anywhere,\npull back, let go', {
+        fontFamily: 'Kalam, cursive',
+        fontSize: `${HINT.size}px`,
+        color: `#${COLORS.inkSoft.toString(16).padStart(6, '0')}`,
+        align: 'center',
+      })
+      .setOrigin(0.5, hasRoomAbove ? 1 : 0)
+      .setAlpha(0);
+    this.tweens.add({ targets: text, alpha: 1, duration: HINT.fadeMs, delay: HINT.delayMs });
+    return text;
+  }
+
+  private hideHint() {
+    const hint = this.hint;
+    if (!hint) return;
+    this.hint = null;
+    this.tweens.killTweensOf(hint);
+    this.tweens.add({ targets: hint, alpha: 0, duration: HINT.fadeMs / 2, onComplete: () => hint.destroy() });
+  }
+
   private drawPaper() {
     const g = this.add.graphics();
     g.lineStyle(1, COLORS.rule, 1);

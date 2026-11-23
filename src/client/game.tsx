@@ -192,7 +192,7 @@ async function decodeArts(arts: Record<string, string>): Promise<Record<string, 
 function Play({ data, reportShot, shotError }: PlayProps) {
   const holder = useRef<HTMLDivElement>(null);
   const game = useRef<Phaser.Game | null>(null);
-  const [hasLaunched, setHasLaunched] = useState((data.mine?.attempts ?? 0) > 0);
+  const launchedRef = useRef((data.mine?.attempts ?? 0) > 0);
   const [isPractice, setIsPractice] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const [shotNames, setShotNames] = useState<string[]>([]);
@@ -233,7 +233,10 @@ function Play({ data, reportShot, shotError }: PlayProps) {
       arts: table.current.arts,
       username,
       material: materialRef.current,
-      onLaunch: () => setHasLaunched(true),
+      showHint: !launchedRef.current,
+      onLaunch: () => {
+        launchedRef.current = true;
+      },
       onResult: (result: ShotResult) => {
         const counts = !latest.current.isPractice && isLoggedIn && !isClosed;
         const report = counts
@@ -353,11 +356,6 @@ function Play({ data, reportShot, shotError }: PlayProps) {
         </button>
       )}
       <div ref={holder} className="relative min-h-0 flex-1 touch-none" />
-      {!hasLaunched && (
-        <p className="pointer-events-none absolute inset-x-0 bottom-6 text-center text-ink-soft">
-          Drag anywhere, pull back, let go
-        </p>
-      )}
       {shotError && (
         <p role="alert" className="absolute inset-x-3 top-12 rounded-lg bg-ink px-3 py-2 text-sm text-felt">
           {shotError}

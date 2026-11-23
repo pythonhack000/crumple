@@ -19,7 +19,7 @@ type TryLevelProps = {
 /** Plays a level for fun or to prove it can be beaten. Nothing is scored. */
 export function TryLevel({ level, title, arts, username, onSunk, onClose }: TryLevelProps) {
   const holder = useRef<HTMLDivElement>(null);
-  const [message, setMessage] = useState('Drag anywhere, pull back, let go');
+  const [message, setMessage] = useState('');
   const [throws, setThrows] = useState(1);
   const latest = useRef({ onSunk });
   useEffect(() => {
@@ -29,6 +29,7 @@ export function TryLevel({ level, title, arts, username, onSunk, onClose }: TryL
   useEffect(() => {
     if (!holder.current) return;
     let game: Phaser.Game | null = null;
+    let hasLaunched = false;
     const makeData = (): SceneData => ({
       level,
       ghosts: [],
@@ -36,7 +37,11 @@ export function TryLevel({ level, title, arts, username, onSunk, onClose }: TryL
       arts,
       username,
       material: 'paper',
-      onLaunch: () => setMessage(''),
+      showHint: !hasLaunched,
+      onLaunch: () => {
+        hasLaunched = true;
+        setMessage('');
+      },
       onResult: (result) => {
         if (result.sunk) {
           setMessage('In the bin');
