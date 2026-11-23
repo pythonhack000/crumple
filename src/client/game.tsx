@@ -74,10 +74,10 @@ function ResultCard({ data, sunk, onPractice, onBuild }: CardProps) {
       </p>
       <Board leaders={data.leaders} username={data.me?.username} />
       <div className="mt-4 flex gap-2">
-        <SketchButton onClick={onPractice} className="flex-1">
-          Practice for stars
+        <SketchButton onClick={onPractice} className="flex-1 px-2 text-base whitespace-nowrap">
+          Go for stars
         </SketchButton>
-        <SketchButton onClick={onBuild} className="flex-1">
+        <SketchButton onClick={onBuild} className="flex-1 px-2 text-base whitespace-nowrap">
           Build a level
         </SketchButton>
         {data.todayPostId && (

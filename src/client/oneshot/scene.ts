@@ -5,7 +5,7 @@ import { WORLD } from '../../shared/level';
 import { createSim, gravityPerStep, launchVelocity, PHYSICS, previewArc, usableLeftovers } from '../../shared/sim';
 import type { Sim, SimEvent } from '../../shared/sim';
 import { paperBall, penBlock, penCircle, penLine, penStar, rectCorners, seeded } from './sketch';
-import { setAimPower, sfx, unlock } from './audio';
+import { setAimPower, setHoldBreath, sfx, unlock } from './audio';
 import { COLORS } from './theme';
 
 export type ShotResult = { sunk: boolean; stars: number; path: Point[]; rest: Point | null };
@@ -29,6 +29,13 @@ const MAX_STEPS_PER_FRAME = 5;
 const RULE_GAP = 24;
 const MARGIN_X = 26;
 const DRAW_IN_DELAY = 80;
+/** Within this distance of the bin, falling, time slows down. */
+const SLOWMO_RADIUS = 80;
+const SLOWMO_SCALE = 0.32;
+const SLOWMO_ZOOM = 1.35;
+/** The replay plays the sinking throw back at this fraction of real speed. */
+const REPLAY_SPEED = 0.6;
+const REPLAY_MAX_MS = 3600;
 const DRAW_IN_STAGGER = 45;
 
 export class PlayScene extends Phaser.Scene {
@@ -47,6 +54,8 @@ export class PlayScene extends Phaser.Scene {
   private windOffset = 0;
   private finished = false;
   private ballScale = 1;
+  private isSlowMo = false;
+  private replaySkip: (() => void) | null = null;
 
   constructor() {
     super('play');
@@ -62,6 +71,8 @@ export class PlayScene extends Phaser.Scene {
     this.finished = false;
     this.dragStart = null;
     this.dragNow = null;
+    this.isSlowMo = false;
+    this.replaySkip = null;
   }
 
   create() {
@@ -89,6 +100,10 @@ export class PlayScene extends Phaser.Scene {
 
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       unlock();
+      if (this.replaySkip) {
+        this.replaySkip();
+        return;
+      }
       if (this.sim.status !== 'aiming') return;
       this.dragStart = { x: pointer.worldX, y: pointer.worldY };
       this.dragNow = this.dragStart;
@@ -390,8 +405,84 @@ export class PlayScene extends Phaser.Scene {
   private finish(sunk: boolean) {
     if (this.finished) return;
     this.finished = true;
+    this.setSlowMo(false);
     const result = { sunk, stars: this.sim.stars, path: this.sim.path(), rest: this.sim.restPoint() };
-    this.time.delayedCall(sunk ? 700 : 350, () => this.setup.onResult(result));
+    if (!sunk) {
+      this.time.delayedCall(350, () => this.setup.onResult(result));
+      return;
+    }
+    this.time.delayedCall(700, () => this.playReplay(result.path, () => this.setup.onResult(result)));
+  }
+
+  /** Slows time and leans the camera in when the ball is about to reach the bin. */
+  private setSlowMo(on: boolean) {
+    if (on === this.isSlowMo) return;
+    this.isSlowMo = on;
+    setHoldBreath(on);
+    const camera = this.cameras.main;
+    const { cup } = this.setup.level;
+    if (on) {
+      camera.pan(cup.x, cup.y - 20, 260, 'Sine.easeOut');
+      camera.zoomTo(SLOWMO_ZOOM, 260, 'Sine.easeOut');
+    } else {
+      camera.pan(WORLD.width / 2, WORLD.height / 2, 300, 'Sine.easeInOut');
+      camera.zoomTo(1, 300, 'Sine.easeInOut');
+    }
+  }
+
+  /** Plays the sinking throw back slowly with the camera following. Tap to skip. */
+  private playReplay(path: Point[], done: () => void) {
+    if (path.length < 2) return done();
+    const camera = this.cameras.main;
+    const ghost = this.add.graphics();
+    const label = this.add
+      .text(WORLD.width / 2, 34, 'Replay', { fontFamily: 'Kalam, cursive', fontSize: '22px', color: '#f2553a' })
+      .setOrigin(0.5)
+      .setScrollFactor(0);
+    const marker = this.add.graphics();
+    paperBall(marker, PHYSICS.ballRadius + 2, seeded(7), COLORS.coral, COLORS.ink);
+    const duration = Math.min(REPLAY_MAX_MS, (path.length * PHYSICS.pathEvery * PHYSICS.stepMs) / REPLAY_SPEED);
+    camera.zoomTo(1.25, 300);
+    let isDone = false;
+    const finishReplay = () => {
+      if (isDone) return;
+      isDone = true;
+      this.replaySkip = null;
+      tween.stop();
+      ghost.destroy();
+      marker.destroy();
+      label.destroy();
+      camera.zoomTo(1, 250);
+      camera.pan(WORLD.width / 2, WORLD.height / 2, 250);
+      done();
+    };
+    const progress = { t: 0 };
+    const tween = this.tweens.add({
+      targets: progress,
+      t: 1,
+      duration,
+      ease: 'Linear',
+      onUpdate: () => {
+        const exact = progress.t * (path.length - 1);
+        const index = Math.floor(exact);
+        const a = path[index];
+        const b = path[Math.min(path.length - 1, index + 1)];
+        if (!a || !b) return;
+        const x = a.x + (b.x - a.x) * (exact - index);
+        const y = a.y + (b.y - a.y) * (exact - index);
+        marker.setPosition(x, y);
+        marker.rotation += 0.12;
+        camera.centerOn(x, y);
+        ghost.clear();
+        ghost.lineStyle(2, COLORS.coral, 0.6);
+        ghost.beginPath();
+        path.slice(0, index + 1).forEach((p, i) => (i === 0 ? ghost.moveTo(p.x, p.y) : ghost.lineTo(p.x, p.y)));
+        ghost.lineTo(x, y);
+        ghost.strokePath();
+      },
+      onComplete: () => this.time.delayedCall(250, finishReplay),
+    });
+    this.replaySkip = finishReplay;
   }
 
   override update(_time: number, delta: number) {
@@ -404,7 +495,12 @@ export class PlayScene extends Phaser.Scene {
     }
     if (this.sim.status !== 'flying') return;
 
-    this.accumulator += Math.min(delta, 100);
+    const { cup } = this.setup.level;
+    const { position: p, velocity: v } = this.sim.ball;
+    const isNearBin = Math.hypot(p.x - cup.x, p.y - cup.y) < SLOWMO_RADIUS && v.y > 0 && p.y < cup.y;
+    this.setSlowMo(isNearBin);
+
+    this.accumulator += Math.min(delta, 100) * (this.isSlowMo ? SLOWMO_SCALE : 1);
     let steps = 0;
     while (this.accumulator >= PHYSICS.stepMs && steps < MAX_STEPS_PER_FRAME && this.sim.status === 'flying') {
       for (const event of this.sim.step()) this.handle(event);
