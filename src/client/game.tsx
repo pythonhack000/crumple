@@ -62,7 +62,10 @@ function ResultCard({ data, sunk, onPractice }: CardProps) {
         <span className="font-display text-2xl font-bold tabular-nums">{sunk.score}</span>
         <span className="text-felt/70">points</span>
       </p>
-      <p className="mt-1 text-sm text-felt/70">{ghostLine}</p>
+      <p className="mt-1 text-sm text-felt/70">
+        {sunk.bonus > 0 ? `Clean table bonus +${sunk.bonus}. ` : 'The table was a mess, no clean table bonus. '}
+        {ghostLine}
+      </p>
       <Board leaders={data.leaders} username={data.me?.username} />
       <div className="mt-4 flex gap-2">
         <button type="button" onClick={onPractice} className="h-12 flex-1 rounded-full bg-coral font-semibold text-ink">
@@ -105,7 +108,7 @@ function Play({ data, reportShot, shotError }: PlayProps) {
     latest.current = { reportShot, isPractice };
   }, [reportShot, isPractice]);
   // What is on the table: other players' paths and this player's missed balls.
-  const table = useRef({ ghosts: data.ghosts, leftovers: data.mine?.leftovers ?? [] });
+  const table = useRef({ ghosts: data.ghosts, pile: data.pile });
 
   const restart = useRef<() => void>(() => undefined);
 
@@ -114,17 +117,19 @@ function Play({ data, reportShot, shotError }: PlayProps) {
     const makeData = (): SceneData => ({
       level,
       ghosts: table.current.ghosts,
-      leftovers: table.current.leftovers,
+      pile: table.current.pile,
       onLaunch: () => setHasLaunched(true),
       onResult: (result: ShotResult) => {
         const counts = !latest.current.isPractice && isLoggedIn && !isClosed;
         const report = counts ? latest.current.reportShot(result) : Promise.resolve(undefined);
         if (!result.sunk && result.rest) {
-          table.current = {
-            ...table.current,
-            leftovers: [...table.current.leftovers, result.rest].slice(-PHYSICS.maxLeftovers),
-          };
+          // Show the miss at once; the server's shared pile replaces it when it answers.
+          const mineNow = { ...result.rest, mine: true };
+          table.current = { ...table.current, pile: [...table.current.pile, mineNow].slice(-PHYSICS.maxLeftovers) };
         }
+        void report.then((response) => {
+          if (response) table.current = { ...table.current, pile: response.pile };
+        });
         if (result.sunk && counts) {
           // Redraw with everyone's paths once the server confirms the sink.
           void report.then((response) => {

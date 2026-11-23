@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import type { PileBall } from '../../shared/api';
 import type { Level, Point } from '../../shared/level';
 import { WORLD } from '../../shared/level';
 import { createSim, gravityPerStep, launchVelocity, PHYSICS, previewArc, usableLeftovers } from '../../shared/sim';
@@ -10,8 +11,8 @@ export type ShotResult = { sunk: boolean; stars: number; path: Point[]; rest: Po
 export type SceneData = {
   level: Level;
   ghosts: Point[][];
-  /** Missed balls from earlier shots; they stay on the table as obstacles. */
-  leftovers: Point[];
+  /** Everyone's missed balls on the shared table; they are solid. */
+  pile: PileBall[];
   onLaunch: () => void;
   onResult: (result: ShotResult) => void;
 };
@@ -50,7 +51,7 @@ export class PlayScene extends Phaser.Scene {
 
   init(data: SceneData) {
     this.setup = data;
-    this.sim = createSim(data.level, data.leftovers);
+    this.sim = createSim(data.level, data.pile);
     this.stars = [];
     this.bumpers = [];
     this.trailPoints = [];
@@ -114,24 +115,16 @@ export class PlayScene extends Phaser.Scene {
   }
 
   private drawLeftovers() {
-    const leftovers = usableLeftovers(this.setup.level, this.setup.leftovers);
-    leftovers.forEach((point, index) => {
-      const isNewest = index === leftovers.length - 1;
-      const ball = this.add
-        .circle(point.x, point.y, PHYSICS.ballRadius, COLORS.felt)
-        .setStrokeStyle(2.5, COLORS.inkSoft);
-      this.add
-        .text(point.x, point.y + 0.5, String(index + 1), {
-          fontFamily: 'Bricolage Grotesque Variable, system-ui, sans-serif',
-          fontSize: '11px',
-          fontStyle: 'bold',
-          color: '#5d7d73',
-        })
-        .setOrigin(0.5);
+    const pile = usableLeftovers(this.setup.level, this.setup.pile);
+    pile.forEach((ball, index) => {
+      const isNewest = ball.mine && index === pile.length - 1;
+      const body = this.add
+        .circle(ball.x, ball.y, PHYSICS.ballRadius, COLORS.felt)
+        .setStrokeStyle(2.5, ball.mine ? COLORS.coral : COLORS.inkSoft, ball.mine ? 1 : 0.7);
       if (isNewest) {
         // The ball you just missed with settles into place.
-        ball.setScale(1.4);
-        this.tweens.add({ targets: ball, scale: 1, duration: 260, ease: 'Back.easeOut' });
+        body.setScale(1.4);
+        this.tweens.add({ targets: body, scale: 1, duration: 260, ease: 'Back.easeOut' });
       }
     });
   }

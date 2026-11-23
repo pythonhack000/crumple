@@ -1,5 +1,5 @@
 import { redis } from '@devvit/web/server';
-import type { LeaderRow, MyRound, RoundStatus } from '../../shared/api';
+import type { LeaderRow, MyRound, PileBall, RoundStatus } from '../../shared/api';
 import type { Level, Point } from '../../shared/level';
 import { parseLevel } from '../../shared/level';
 
@@ -21,7 +21,6 @@ export type PlayerRecord = {
 
 /** Sinking paths kept per round for the ghost overlay. */
 export const MAX_GHOSTS = 60;
-export const MAX_LEFTOVERS = 30;
 
 const key = {
   current: 'current',
@@ -35,7 +34,7 @@ const key = {
   board: (day: string) => `board:${day}`,
   ghosts: (day: string) => `ghosts:${day}`,
   holesInOne: (day: string) => `hio:${day}`,
-  leftovers: (day: string) => `left:${day}`,
+  pile: (day: string) => `pile:${day}`,
   player: (username: string) => `player:${username}`,
 };
 
@@ -108,25 +107,23 @@ export async function markClosed(dayKey: string): Promise<void> {
 
 // Shots
 
-type SinkRecord = { attempt: number; stars: number; score: number };
+type SinkRecord = { attempt: number; stars: number; score: number; bonus: number };
 
 function isSinkRecord(value: unknown): value is SinkRecord {
   if (typeof value !== 'object' || value === null) return false;
-  const { attempt, stars, score } = value as Record<string, unknown>;
-  return typeof attempt === 'number' && typeof stars === 'number' && typeof score === 'number';
+  const { attempt, stars, score, bonus } = value as Record<string, unknown>;
+  return typeof attempt === 'number' && typeof stars === 'number' && typeof score === 'number' && typeof bonus === 'number';
 }
 
 export async function getMyRound(dayKey: string, username: string): Promise<MyRound> {
-  const [attempts, sunkRaw, leftoversRaw] = await Promise.all([
+  const [attempts, sunkRaw] = await Promise.all([
     redis.hGet(key.attempts(dayKey), username),
     redis.hGet(key.sunk(dayKey), username),
-    redis.hGet(key.leftovers(dayKey), username),
   ]);
   const sunk = parseJson(sunkRaw);
   return {
     attempts: toInt(attempts),
-    leftovers: parsePath(leftoversRaw) ?? [],
-    sunk: isSinkRecord(sunk) ? { attempt: sunk.attempt, stars: sunk.stars, score: sunk.score } : null,
+    sunk: isSinkRecord(sunk) ? { attempt: sunk.attempt, stars: sunk.stars, score: sunk.score, bonus: sunk.bonus } : null,
   };
 }
 
@@ -135,18 +132,35 @@ export async function addAttempt(dayKey: string, username: string): Promise<numb
   return redis.hIncrBy(key.attempts(dayKey), username, 1);
 }
 
-/** Keeps a missed ball on this player's table, newest last, capped. */
-export async function addLeftover(dayKey: string, username: string, point: Point): Promise<void> {
-  const current = parsePath(await redis.hGet(key.leftovers(dayKey), username)) ?? [];
-  const next = [...current, point].slice(-MAX_LEFTOVERS);
-  await redis.hSet(key.leftovers(dayKey), { [username]: JSON.stringify(next) });
+/** Shared table: the newest missed balls from every player today. */
+export const PILE_SIZE = 80;
+
+/** Drops a missed ball on today's shared table, keeping only the newest. */
+export async function addToPile(dayKey: string, username: string, point: Point): Promise<void> {
+  const member = `${point.x},${point.y},${username},${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  await redis.zAdd(key.pile(dayKey), { member, score: Date.now() });
+  await redis.zRemRangeByRank(key.pile(dayKey), 0, -(PILE_SIZE + 1));
+}
+
+export async function pileSize(dayKey: string): Promise<number> {
+  return redis.zCard(key.pile(dayKey));
+}
+
+export async function getPile(dayKey: string, username: string | undefined): Promise<PileBall[]> {
+  const rows = await redis.zRange(key.pile(dayKey), 0, -1, { by: 'rank' });
+  return rows.flatMap((row) => {
+    const [x, y, owner] = row.member.split(',');
+    const px = Number(x);
+    const py = Number(y);
+    return Number.isFinite(px) && Number.isFinite(py) ? [{ x: px, y: py, mine: owner === username }] : [];
+  });
 }
 
 /** Records the first sink; returns false if the player already sank this round. */
 export async function recordSink(
   dayKey: string,
   username: string,
-  sunk: { attempt: number; stars: number; score: number },
+  sunk: SinkRecord,
   path: Point[]
 ): Promise<boolean> {
   const added = await redis.hSetNX(key.sunk(dayKey), username, JSON.stringify(sunk));

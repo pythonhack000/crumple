@@ -96,10 +96,20 @@ export const SCORE = {
   star: 25,
   attemptPenalty: 10,
   minCupScore: 30,
+  /** Bonus for sinking while the shared table is still clean. */
+  cleanTableMax: 50,
 } as const;
 
-/** Score for sinking the ball on attempt `attempt` (1-based) with `stars` collected. */
-export function shotScore(attempt: number, stars: number): number {
+/** Bonus for the clutter on the shared table when the ball went in. */
+export function cleanTableBonus(pileSize: number): number {
+  return Math.max(0, SCORE.cleanTableMax - pileSize);
+}
+
+/**
+ * Score for sinking on attempt `attempt` (1-based) with `stars` collected,
+ * while `pileSize` missed balls from everyone were on the table.
+ */
+export function shotScore(attempt: number, stars: number, pileSize: number = SCORE.cleanTableMax): number {
   const cup = Math.max(SCORE.minCupScore, SCORE.cup - SCORE.attemptPenalty * (attempt - 1));
-  return cup + SCORE.star * stars;
+  return cup + SCORE.star * stars + cleanTableBonus(pileSize);
 }

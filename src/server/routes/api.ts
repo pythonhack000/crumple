@@ -33,14 +33,15 @@ api.get('/init', async (c) => {
 
     const username = (await reddit.getCurrentUsername()) ?? undefined;
     const mine = username ? await store.getMyRound(round.dayKey, username) : null;
-    const [view, me, leaders, ghosts, todayPostId] = await Promise.all([
+    const [view, me, leaders, ghosts, pile, todayPostId] = await Promise.all([
       buildRoundView(round),
       username ? getStats(username) : Promise.resolve(null),
       store.getDayLeaders(round.dayKey, LEADERBOARD_SIZE),
       ghostsFor(round, username, mine?.sunk != null),
+      store.getPile(round.dayKey, username),
       todaysPostId(postId),
     ]);
-    return c.json<InitResponse>({ type: 'init', round: view, me, mine, leaders, ghosts, todayPostId });
+    return c.json<InitResponse>({ type: 'init', round: view, me, mine, leaders, ghosts, pile, todayPostId });
   } catch (error) {
     console.error(`Init failed for post ${postId}`, error);
     return c.json(fail('Could not load today’s level. Try again in a moment.'), 500);
@@ -61,12 +62,13 @@ api.post('/shot', async (c) => {
     if (!shot) return c.json(fail('That shot could not be read.'), 400);
 
     const { mine, counted } = await recordShot(round, username, shot);
-    const [me, leaders, ghosts] = await Promise.all([
+    const [me, leaders, ghosts, pile] = await Promise.all([
       getStats(username),
       store.getDayLeaders(round.dayKey, LEADERBOARD_SIZE),
       ghostsFor(round, username, mine.sunk !== null),
+      store.getPile(round.dayKey, username),
     ]);
-    return c.json<ShotResponse>({ type: 'shot', mine, me, leaders, ghosts, counted });
+    return c.json<ShotResponse>({ type: 'shot', mine, me, leaders, ghosts, pile, counted });
   } catch (error) {
     if (error instanceof ShotError) return c.json(fail(error.message), 409);
     console.error(`Shot failed for ${username} on post ${postId}`, error);

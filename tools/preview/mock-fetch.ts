@@ -26,20 +26,26 @@ const round = {
   holesInOne: 37,
 };
 let mine =
-  state === 'sunk' ? { attempts: 3, sunk: { attempt: 3, stars: 2, score: 130 } } : { attempts: 0, sunk: null as unknown };
+  state === 'sunk' ? { attempts: 3, sunk: { attempt: 3, stars: 2, score: 162, bonus: 32 } } : { attempts: 0, sunk: null as unknown };
+const pile = Array.from({ length: state === 'fresh' ? 0 : 18 }, (_, i) => ({
+  x: 40 + ((i * 97) % 290),
+  y: 300 + ((i * 53) % 260),
+  mine: i % 6 === 0,
+}));
 const ghosts = state === 'sunk' ? [ghost(-20), ghost(0), ghost(25)] : [];
 
 window.fetch = async (input, init) => {
   const url = String(input);
   if (url.includes('/api/init')) {
-    const body = { type: 'init', round, me: state === 'guest' ? null : me, mine: state === 'guest' ? null : mine, leaders, ghosts, todayPostId: null };
+    const body = { type: 'init', round, me: state === 'guest' ? null : me, mine: state === 'guest' ? null : mine, leaders, ghosts, pile, todayPostId: null };
     return new Response(JSON.stringify(body), { status: 200 });
   }
   if (url.includes('/api/shot')) {
     const shot = JSON.parse(String(init?.body ?? '{}'));
     const attempts = (mine as { attempts: number }).attempts + 1;
-    mine = shot.sunk ? { attempts, sunk: { attempt: attempts, stars: shot.stars, score: 100 + shot.stars * 25 } } : { attempts, sunk: null };
-    const body = { type: 'shot', mine, me, leaders, ghosts: shot.sunk ? [ghost(-20), ghost(25)] : [], counted: true };
+    mine = shot.sunk ? { attempts, sunk: { attempt: attempts, stars: shot.stars, score: 150 + shot.stars * 25, bonus: 50 } } : { attempts, sunk: null };
+    if (!shot.sunk && shot.rest) pile.push({ ...shot.rest, mine: true });
+    const body = { type: 'shot', mine, me, leaders, ghosts: shot.sunk ? [ghost(-20), ghost(25)] : [], pile, counted: true };
     return new Response(JSON.stringify(body), { status: 200 });
   }
   return new Response('{}', { status: 404 });

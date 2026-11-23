@@ -17,10 +17,11 @@ export type RoundView = {
 /** One player's progress on one round. */
 export type MyRound = {
   attempts: number;
-  /** Where this player's missed balls stopped; they stay on the table. */
-  leftovers: Point[];
-  sunk: { attempt: number; stars: number; score: number } | null;
+  sunk: { attempt: number; stars: number; score: number; bonus: number } | null;
 };
+
+/** A missed ball lying on the shared table. */
+export type PileBall = { x: number; y: number; mine: boolean };
 
 export type PlayerStats = {
   username: string;
@@ -44,6 +45,8 @@ export type InitResponse = {
   leaders: LeaderRow[];
   /** Other players' sinking paths; sent once the player has sunk or the round closed. */
   ghosts: Point[][];
+  /** Everyone's missed balls on today's shared table, oldest first. */
+  pile: PileBall[];
   /** Post of the round that is open now, when it is not this one. */
   todayPostId: string | null;
 };
@@ -62,6 +65,7 @@ export type ShotResponse = {
   me: PlayerStats;
   leaders: LeaderRow[];
   ghosts: Point[][];
+  pile: PileBall[];
   /** False once the player already sank this round: the shot was practice. */
   counted: boolean;
 };

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LIMITS, parseLevel, SCORE, shotScore } from './level.ts';
+import { cleanTableBonus, LIMITS, parseLevel, SCORE, shotScore } from './level.ts';
 
 const valid = {
   name: 'First bounce',
@@ -63,4 +63,14 @@ test('usableLeftovers drops balls on the tee, in the cup or off the table', asyn
     { x: 150, y: 400 },
   ]);
   assert.deepEqual(kept, [{ x: 150, y: 400 }]);
+});
+
+test('cleanTableBonus is full on a clean table and shrinks with the pile', () => {
+  assert.equal(cleanTableBonus(0), SCORE.cleanTableMax);
+  assert.equal(cleanTableBonus(20), SCORE.cleanTableMax - 20);
+  assert.equal(cleanTableBonus(500), 0);
+});
+
+test('shotScore adds the clean-table bonus', () => {
+  assert.equal(shotScore(1, 0, 0), SCORE.cup + SCORE.cleanTableMax);
 });

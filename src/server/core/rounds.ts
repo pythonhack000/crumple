@@ -1,7 +1,7 @@
 import { reddit } from '@devvit/web/server';
 import type { MyRound, PlayerStats, RoundView, ShotRequest } from '../../shared/api';
 import { dayKeyOf, daysBetween, nextStreak } from '../../shared/game';
-import { shotScore } from '../../shared/level';
+import { cleanTableBonus, shotScore } from '../../shared/level';
 import { builtInLevelFor } from '../../shared/levels';
 import * as store from './store';
 import type { Round } from './store';
@@ -89,9 +89,10 @@ export async function recordShot(round: Round, username: string, shot: ShotReque
     const streak = await updateStreak(username, round.dayKey);
     await updateFlair(username, streak);
   }
-  if (!shot.sunk && shot.rest) await store.addLeftover(round.dayKey, username, shot.rest);
+  if (!shot.sunk && shot.rest) await store.addToPile(round.dayKey, username, shot.rest);
   if (shot.sunk) {
-    const result = { attempt, stars: shot.stars, score: shotScore(attempt, shot.stars) };
+    const pile = await store.pileSize(round.dayKey);
+    const result = { attempt, stars: shot.stars, score: shotScore(attempt, shot.stars, pile), bonus: cleanTableBonus(pile) };
     if (await store.recordSink(round.dayKey, username, result, shot.path)) {
       await store.addToTotal(username, result.score);
     }

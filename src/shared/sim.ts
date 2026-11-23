@@ -20,8 +20,8 @@ export const PHYSICS = {
   pathEvery: 3,
   pathMax: 240,
   portalCooldown: 20,
-  /** Leftover balls from missed shots kept on the table. */
-  maxLeftovers: 30,
+  /** Missed balls from everyone kept on the shared table. */
+  maxLeftovers: 80,
 } as const;
 
 export type SimEvent =
@@ -103,7 +103,7 @@ export type Sim = ReturnType<typeof createSim>;
  * Leftover balls that can safely sit on the table: not on the tee, not in the
  * cup, inside the playfield. A ball spawned inside another would explode.
  */
-export function usableLeftovers(level: Level, leftovers: readonly Point[]): Point[] {
+export function usableLeftovers<T extends Point>(level: Level, leftovers: readonly T[]): T[] {
   const clear = PHYSICS.ballRadius * 2.4;
   return leftovers
     .filter(
