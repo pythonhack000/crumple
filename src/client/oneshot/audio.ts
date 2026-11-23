@@ -32,6 +32,7 @@ let musicTimer: number | null = null;
 let nextStep = 0;
 let step = 0;
 let material: Material = 'paper';
+let stretchStep = -1;
 
 const midiToHz = (note: number) => 440 * 2 ** ((note - 69) / 12);
 const sixteenth = () => 60 / BPM / 4;
@@ -118,6 +119,24 @@ function burst(start: number, length: number, peak: number, freq: number, out: A
   filter.Q.value = q;
   const gain = env(start, 0.002, length, peak);
   if (!gain) return;
+  source.connect(filter).connect(gain).connect(out);
+  source.start(start, Math.random() * 1.5, length + 0.05);
+}
+
+/** Filtered noise whose pitch sweeps from `fromHz` to `toHz`: a whoosh. */
+function sweep(start: number, length: number, peak: number, fromHz: number, toHz: number, out: AudioNode) {
+  if (!ctx || !noise) return;
+  const source = ctx.createBufferSource();
+  source.buffer = noise;
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.Q.value = 1.4;
+  filter.frequency.setValueAtTime(fromHz, start);
+  filter.frequency.exponentialRampToValueAtTime(toHz, start + length);
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(peak, start + length * 0.25);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + length);
   source.connect(filter).connect(gain).connect(out);
   source.start(start, Math.random() * 1.5, length + 0.05);
 }
@@ -234,14 +253,27 @@ function impact(speed: number) {
 }
 
 export const sfx = {
-  launch() {
+  /** Slingshot release: the band snaps, a low thump, then a rising whoosh. */
+  launch(power = 0.6) {
     const now = sfxNow();
     if (!now) return;
     const { t, out } = now;
-    burst(t, 0.16, 0.3, 1200, out, 'bandpass', 0.6);
-    if (material === 'paper') crinkle(t, out, 0.4);
-    if (material === 'rubber') osc(900, t, 0.08, 'sine', 0.06, out, 1400);
+    burst(t, 0.006, 0.5, 4000, out, 'highpass');
+    osc(150, t, 0.09, 'sine', 0.45, out, 55);
+    osc(420 + power * 260, t, 0.07, 'triangle', 0.12, out, 180);
+    sweep(t + 0.01, 0.18 + power * 0.14, 0.18 + power * 0.32, 280, 2600 + power * 2400, out);
+    if (material === 'paper') crinkle(t + 0.02, out, 0.25);
+    stretchStep = -1;
     setAimPower(0.6);
+  },
+  /** Faint creaks of the band while pulling back, rising with the power. */
+  stretch(power: number) {
+    const bucket = Math.floor(power * 10);
+    if (bucket === stretchStep || bucket === 0) return;
+    stretchStep = bucket;
+    const now = sfxNow();
+    if (!now) return;
+    osc(500 + bucket * 90, now.t, 0.025, 'triangle', 0.035 + bucket * 0.004, now.out);
   },
   hit(speed: number) {
     impact(speed);

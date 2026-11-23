@@ -309,7 +309,7 @@ export class PlayScene extends Phaser.Scene {
     this.tweens.killTweensOf(this.ball);
     this.ball.setScale(this.ballScale);
     this.sim.launch(drag);
-    sfx.launch();
+    sfx.launch(Math.min(Math.hypot(drag.x, drag.y), PHYSICS.fullPowerDrag) / PHYSICS.fullPowerDrag);
     this.setup.onLaunch();
   }
 
@@ -321,6 +321,7 @@ export class PlayScene extends Phaser.Scene {
     if (length < MIN_DRAG) return;
     const power = Math.min(length, PHYSICS.fullPowerDrag) / PHYSICS.fullPowerDrag;
     setAimPower(power);
+    sfx.stretch(power);
     const from = { x: this.ball.x, y: this.ball.y };
 
     // Rubber band toward the pull, power arc around the ball.
