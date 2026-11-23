@@ -1,7 +1,9 @@
 import { Hono } from 'hono';
 import type { TaskResponse } from '@devvit/web/server';
 import type { TriggerResponse } from '@devvit/web/shared';
-import { startDay } from '../core/rounds';
+import { dayKeyOf } from '../../shared/game';
+import { repostToday, startDay } from '../core/rounds';
+import { claimDailyJob } from '../core/store';
 
 export const triggers = new Hono();
 
@@ -26,6 +28,20 @@ scheduler.post('/new-day', async (c) => {
     return c.json<TaskResponse>({ status: 'ok' }, 200);
   } catch (error) {
     console.error('Daily round rollover failed', error);
+    return c.json<TaskResponse>({ status: 'error' }, 500);
+  }
+});
+
+/** One-off: reposts today's level. Guarded so it runs once per day even if scheduled repeatedly. */
+scheduler.post('/repost-today', async (c) => {
+  try {
+    const today = dayKeyOf(new Date());
+    if (!(await claimDailyJob('repost', today))) return c.json<TaskResponse>({ status: 'ok' }, 200);
+    const round = await repostToday();
+    if (round) console.log(`Round ${round.dayKey} reposted as ${round.postId}`);
+    return c.json<TaskResponse>({ status: 'ok' }, 200);
+  } catch (error) {
+    console.error('Repost failed', error);
     return c.json<TaskResponse>({ status: 'error' }, 500);
   }
 });

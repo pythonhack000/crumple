@@ -25,6 +25,13 @@
         "location": "subreddit",
         "forUserType": "moderator",
         "endpoint": "/internal/menu/start-today"
+      },
+      {
+        "label": "Crumple: post today's level again",
+        "description": "Posts the open level under a fresh post",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/repost-today"
       }
     ]
   },

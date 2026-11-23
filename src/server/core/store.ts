@@ -309,3 +309,11 @@ export async function getBallArts(usernames: string[]): Promise<Record<string, s
     })
   );
 }
+
+/** Claims a once-per-day job; returns false if it already ran today. */
+export async function claimDailyJob(job: string, dayKey: string): Promise<boolean> {
+  const claimKey = `job:${job}:${dayKey}`;
+  if (await redis.get(claimKey)) return false;
+  await redis.set(claimKey, String(Date.now()));
+  return true;
+}

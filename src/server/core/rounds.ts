@@ -2,6 +2,7 @@ import { reddit } from '@devvit/web/server';
 import type { MyRound, PlayerStats, RoundView, ShotRequest } from '../../shared/api';
 import { dayKeyOf, daysBetween, nextStreak } from '../../shared/game';
 import { cleanTableBonus, shotScore } from '../../shared/level';
+import type { Level } from '../../shared/level';
 import { builtInLevelFor } from '../../shared/levels';
 import * as store from './store';
 import type { Round } from './store';
@@ -139,6 +140,25 @@ export async function closeRound(round: Round): Promise<void> {
   }
 }
 
+function roundTitle(dayNumber: number, level: Level): string {
+  const byline = level.author ? ` by u/${level.author}` : '';
+  return `${GAME_NAME} #${dayNumber}: ${level.name}${byline}`;
+}
+
+/**
+ * Posts today's open round again under a fresh post. Shots, the shared table
+ * and the board belong to the round, so nothing is lost; both posts work.
+ */
+export async function repostToday(): Promise<Round | undefined> {
+  const currentKey = await store.getCurrentDayKey();
+  const round = currentKey ? await store.getRound(currentKey) : undefined;
+  if (!round || round.status !== 'open') return undefined;
+  const post = await reddit.submitCustomPost({ title: roundTitle(round.dayNumber, round.level), entry: 'default' });
+  const next = { ...round, postId: post.id };
+  await store.saveRound(next);
+  return next;
+}
+
 /**
  * Closes the open round (if any) and opens today's. Safe to call twice on the
  * same day: the second call returns the round that is already open.
@@ -158,11 +178,7 @@ export async function startDay(now: Date): Promise<Round> {
   const community = await store.takeTopCommunityLevel();
   const level = community ? { ...community.level, author: community.author } : builtInLevelFor(dayNumber);
   if (community) await setLevelMakerFlair(community.author);
-  const byline = level.author ? ` by u/${level.author}` : '';
-  const post = await reddit.submitCustomPost({
-    title: `${GAME_NAME} #${dayNumber}: ${level.name}${byline}`,
-    entry: 'default',
-  });
+  const post = await reddit.submitCustomPost({ title: roundTitle(dayNumber, level), entry: 'default' });
   const round: Round = { dayKey: today, dayNumber, level, postId: post.id, status: 'open' };
   await store.saveRound(round);
   return round;
