@@ -34,7 +34,7 @@ function check(level: Level, verbose: boolean) {
   const bestStars = Math.max(0, ...sinks.map((sink) => sink.stars));
   const allStars = sinks.filter((sink) => sink.stars === level.stars.length).length;
   const rate = (sinks.length / shots) * 100;
-  const verdict = sinks.length === 0 ? 'UNSOLVABLE' : rate > 8 ? 'too easy?' : 'ok';
+  const verdict = sinks.length === 0 ? 'UNSOLVABLE' : rate > 8 ? 'too easy?' : rate < 0.3 ? 'too hard?' : 'ok';
   console.log(
     `${level.name.padEnd(14)} sinks ${String(sinks.length).padStart(4)}/${shots} (${rate.toFixed(2)}%)  best stars ${bestStars}/${level.stars.length}  all-star sinks ${allStars}  ${verdict}`
   );
