@@ -21,7 +21,8 @@ export const scheduler = new Hono();
 /** Runs at 00:00 UTC: closes yesterday's round and opens today's. */
 scheduler.post('/new-day', async (c) => {
   try {
-    await startDay(new Date());
+    const round = await startDay(new Date());
+    console.log(`Round ${round.dayKey} is open in post ${round.postId}`);
     return c.json<TaskResponse>({ status: 'ok' }, 200);
   } catch (error) {
     console.error('Daily round rollover failed', error);
