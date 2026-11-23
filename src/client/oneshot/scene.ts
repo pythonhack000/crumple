@@ -15,6 +15,10 @@ export type SceneData = {
   ghosts: Point[][];
   /** Everyone's missed balls on the shared table; they are solid. */
   pile: PileBall[];
+  /** Decoded drawn balls by username. */
+  arts: Record<string, HTMLImageElement>;
+  /** The viewer, whose drawn ball is the one being thrown. */
+  username: string | undefined;
   onLaunch: () => void;
   onResult: (result: ShotResult) => void;
 };
@@ -30,7 +34,7 @@ const DRAW_IN_STAGGER = 45;
 export class PlayScene extends Phaser.Scene {
   private sim!: Sim;
   private setup!: SceneData;
-  private ball!: Phaser.GameObjects.Graphics;
+  private ball!: Phaser.GameObjects.Graphics | Phaser.GameObjects.Image;
   private aim!: Phaser.GameObjects.Graphics;
   private trail!: Phaser.GameObjects.Graphics;
   private wind!: Phaser.GameObjects.Graphics;
@@ -42,6 +46,7 @@ export class PlayScene extends Phaser.Scene {
   private accumulator = 0;
   private windOffset = 0;
   private finished = false;
+  private ballScale = 1;
 
   constructor() {
     super('play');
@@ -71,9 +76,16 @@ export class PlayScene extends Phaser.Scene {
     this.trail = this.add.graphics();
     this.aim = this.add.graphics();
     const { ball } = this.setup.level;
-    this.ball = this.add.graphics({ x: ball.x, y: ball.y });
-    paperBall(this.ball, PHYSICS.ballRadius + 2, seeded(7), COLORS.coral, COLORS.ink);
-    this.tweens.add({ targets: this.ball, scale: 1.1, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    const myArt = this.artKey(this.setup.username);
+    if (myArt) {
+      this.ball = this.add.image(ball.x, ball.y, myArt).setDisplaySize((PHYSICS.ballRadius + 3) * 2, (PHYSICS.ballRadius + 3) * 2);
+    } else {
+      const paper = this.add.graphics({ x: ball.x, y: ball.y });
+      paperBall(paper, PHYSICS.ballRadius + 2, seeded(7), COLORS.coral, COLORS.ink);
+      this.ball = paper;
+    }
+    this.ballScale = this.ball.scale;
+    this.tweens.add({ targets: this.ball, scale: this.ballScale * 1.1, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       unlock();
@@ -91,7 +103,7 @@ export class PlayScene extends Phaser.Scene {
   /** Sketches the level in, piece by piece, as if someone is drawing it now. */
   private drawIn(objects: Phaser.GameObjects.GameObject[]) {
     objects.forEach((object, index) => {
-      if (!(object instanceof Phaser.GameObjects.Graphics)) return;
+      if (!(object instanceof Phaser.GameObjects.Graphics) && !(object instanceof Phaser.GameObjects.Image)) return;
       const scale = object.scale;
       object.setAlpha(0).setScale(scale * 0.92);
       this.tweens.add({
@@ -103,6 +115,16 @@ export class PlayScene extends Phaser.Scene {
         ease: 'Quad.easeOut',
       });
     });
+  }
+
+  /** Texture key for a player's drawn ball, registering it on first use. */
+  private artKey(username: string | undefined): string | null {
+    if (!username) return null;
+    const image = this.setup.arts[username];
+    if (!image) return null;
+    const key = `art:${username}:${image.src.length}`;
+    if (!this.textures.exists(key)) this.textures.addImage(key, image);
+    return key;
   }
 
   private makeTextures() {
@@ -234,13 +256,22 @@ export class PlayScene extends Phaser.Scene {
   private drawPile() {
     const pile = usableLeftovers(this.setup.level, this.setup.pile);
     pile.forEach((ball, index) => {
-      const g = this.add.graphics({ x: ball.x, y: ball.y });
+      const art = this.artKey(ball.owner);
+      let g: Phaser.GameObjects.Graphics | Phaser.GameObjects.Image;
+      if (art) {
+        g = this.add.image(ball.x, ball.y, art).setDisplaySize(PHYSICS.ballRadius * 2, PHYSICS.ballRadius * 2);
+        g.setAlpha(ball.mine ? 1 : 0.85);
+      } else {
+        const paper = this.add.graphics({ x: ball.x, y: ball.y });
+        paperBall(paper, PHYSICS.ballRadius, seeded(index + 11), COLORS.paper, ball.mine ? COLORS.ink : COLORS.inkSoft, ball.mine ? 1 : 0.8);
+        g = paper;
+      }
       g.angle = (index * 47) % 360;
-      paperBall(g, PHYSICS.ballRadius, seeded(index + 11), COLORS.paper, ball.mine ? COLORS.ink : COLORS.inkSoft, ball.mine ? 1 : 0.8);
       if (ball.mine && index === pile.length - 1) {
         // The ball you just missed with settles into place.
-        g.setScale(1.4);
-        this.tweens.add({ targets: g, scale: 1, duration: 260, ease: 'Back.easeOut' });
+        const settled = g.scale;
+        g.setScale(settled * 1.4);
+        this.tweens.add({ targets: g, scale: settled, duration: 260, ease: 'Back.easeOut' });
       }
     });
   }
@@ -255,7 +286,7 @@ export class PlayScene extends Phaser.Scene {
     const drag = { x: now.x - start.x, y: now.y - start.y };
     if (Math.hypot(drag.x, drag.y) < MIN_DRAG) return;
     this.tweens.killTweensOf(this.ball);
-    this.ball.setScale(1);
+    this.ball.setScale(this.ballScale);
     this.sim.launch(drag);
     sfx.launch();
     this.setup.onLaunch();
@@ -333,7 +364,7 @@ export class PlayScene extends Phaser.Scene {
         break;
       case 'hit':
         if (event.speed > 3) {
-          this.tweens.add({ targets: this.ball, scaleX: 1.25, scaleY: 0.8, duration: 60, yoyo: true });
+          this.tweens.add({ targets: this.ball, scaleX: this.ballScale * 1.25, scaleY: this.ballScale * 0.8, duration: 60, yoyo: true });
         }
         if (event.speed > 1) sfx.hit(event.speed);
         break;
@@ -342,7 +373,7 @@ export class PlayScene extends Phaser.Scene {
         this.burst(cup.x, cup.y - 12, 'scrap', COLORS.white, 34, 300);
         this.burst(cup.x, cup.y - 12, 'dot', COLORS.coral, 16, 260);
         this.cameras.main.shake(160, 0.008);
-        this.tweens.add({ targets: this.ball, scale: 0.6, alpha: 0, duration: 350, ease: 'Quad.easeIn' });
+        this.tweens.add({ targets: this.ball, scale: this.ballScale * 0.6, alpha: 0, duration: 350, ease: 'Quad.easeIn' });
         sfx.cup();
         this.finish(true);
         break;

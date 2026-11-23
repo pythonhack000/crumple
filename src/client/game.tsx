@@ -10,6 +10,7 @@ import { PHYSICS } from '../shared/sim';
 import { createGame } from './oneshot/scene';
 import type { SceneData, ShotResult } from './oneshot/scene';
 import { isMuted, setMuted } from './oneshot/audio';
+import { BallEditor } from './oneshot/BallEditor';
 import { SketchButton } from './oneshot/Sketchy';
 import { useRound } from './oneshot/useRound';
 
@@ -89,6 +90,29 @@ type PlayProps = {
   shotError: string | null;
 };
 
+const decoded = new Map<string, HTMLImageElement>();
+
+/** Turns drawn-ball data URLs into images Phaser can use; cached by content. */
+async function decodeArts(arts: Record<string, string>): Promise<Record<string, HTMLImageElement>> {
+  const entries = await Promise.all(
+    Object.entries(arts).map(async ([name, src]) => {
+      const cached = decoded.get(src);
+      if (cached) return [name, cached] as const;
+      const image = new Image();
+      image.src = src;
+      try {
+        await image.decode();
+      } catch (error) {
+        console.error(`Could not decode the ball drawn by ${name}`, error);
+        return undefined;
+      }
+      decoded.set(src, image);
+      return [name, image] as const;
+    })
+  );
+  return Object.fromEntries(entries.filter((entry) => entry !== undefined));
+}
+
 function Play({ data, reportShot, shotError }: PlayProps) {
   const holder = useRef<HTMLDivElement>(null);
   const game = useRef<Phaser.Game | null>(null);
@@ -104,6 +128,9 @@ function Play({ data, reportShot, shotError }: PlayProps) {
   const sunk = data.mine?.sunk ?? null;
   const isLoggedIn = data.me !== null;
   const isClosed = data.round.status === 'closed';
+  const username = data.me?.username;
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [myArt, setMyArt] = useState<string | null>(username ? (data.arts[username] ?? null) : null);
 
   // Scene callbacks outlive renders, so they read the latest values from refs.
   const latest = useRef({ reportShot, isPractice: false });
@@ -111,7 +138,7 @@ function Play({ data, reportShot, shotError }: PlayProps) {
     latest.current = { reportShot, isPractice };
   }, [reportShot, isPractice]);
   // What is on the table: other players' paths and this player's missed balls.
-  const table = useRef({ ghosts: data.ghosts, pile: data.pile });
+  const table = useRef({ ghosts: data.ghosts, pile: data.pile, arts: {} as Record<string, HTMLImageElement> });
 
   const restart = useRef<() => void>(() => undefined);
 
@@ -121,17 +148,21 @@ function Play({ data, reportShot, shotError }: PlayProps) {
       level,
       ghosts: table.current.ghosts,
       pile: table.current.pile,
+      arts: table.current.arts,
+      username,
       onLaunch: () => setHasLaunched(true),
       onResult: (result: ShotResult) => {
         const counts = !latest.current.isPractice && isLoggedIn && !isClosed;
         const report = counts ? latest.current.reportShot(result) : Promise.resolve(undefined);
         if (!result.sunk && result.rest) {
           // Show the miss at once; the server's shared pile replaces it when it answers.
-          const mineNow = { ...result.rest, mine: true };
+          const mineNow = { ...result.rest, mine: true, owner: username ?? '' };
           table.current = { ...table.current, pile: [...table.current.pile, mineNow].slice(-PHYSICS.maxLeftovers) };
         }
-        void report.then((response) => {
-          if (response) table.current = { ...table.current, pile: response.pile };
+        void report.then(async (response) => {
+          if (!response) return;
+          const arts = await decodeArts(response.arts);
+          table.current = { ...table.current, pile: response.pile, arts: { ...table.current.arts, ...arts } };
         });
         if (result.sunk && counts) {
           // Redraw with everyone's paths once the server confirms the sink.
@@ -153,12 +184,32 @@ function Play({ data, reportShot, shotError }: PlayProps) {
       },
     });
     restart.current = () => game.current?.scene.getScene('play')?.scene.restart(makeData());
-    game.current = createGame(holder.current, makeData());
+    let isCancelled = false;
+    const parent = holder.current;
+    // Drawn balls must be decoded before the scene can use them as textures.
+    void decodeArts(data.arts).then((arts) => {
+      if (isCancelled) return;
+      table.current = { ...table.current, arts };
+      game.current = createGame(parent, makeData());
+    });
     return () => {
+      isCancelled = true;
       game.current?.destroy(true);
       game.current = null;
     };
+    // The scene is built once per level; later data flows through refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [level, isLoggedIn, isClosed]);
+
+  const handleArtSaved = async (art: string | null) => {
+    setIsDrawing(false);
+    setMyArt(art);
+    if (!username) return;
+    const rest = Object.fromEntries(Object.entries(table.current.arts).filter(([name]) => name !== username));
+    const mine = art ? await decodeArts({ [username]: art }) : {};
+    table.current = { ...table.current, arts: { ...rest, ...mine } };
+    restart.current();
+  };
 
   const handlePractice = () => {
     latest.current = { ...latest.current, isPractice: true };
@@ -173,17 +224,24 @@ function Play({ data, reportShot, shotError }: PlayProps) {
 
   return (
     <main className="relative mx-auto flex h-screen max-w-[480px] flex-col bg-felt text-ink select-none">
-      <header className="flex items-baseline justify-between gap-3 px-4 pt-3 pb-1">
-        <h1 className="truncate font-display text-2xl">
-          #{data.round.dayNumber} <span className="font-normal text-ink-soft">{level.name}</span>
-        </h1>
-        <div className="flex shrink-0 items-baseline gap-3">
-          <p className={`font-semibold tabular-nums ${flash ? 'text-coral' : ''}`}>{status}</p>
+      <header className="px-4 pt-3 pb-1">
+        <div className="flex items-baseline justify-between gap-3">
+          <h1 className="truncate font-display text-2xl">
+            #{data.round.dayNumber} <span className="text-ink-soft">{level.name}</span>
+          </h1>
+          <p className={`shrink-0 font-semibold tabular-nums ${flash ? 'text-coral' : ''}`}>{status}</p>
+        </div>
+        <div className="flex gap-4 text-sm text-ink-soft">
+          {isLoggedIn && (
+            <button type="button" onClick={() => setIsDrawing(true)} className="underline decoration-dotted underline-offset-4">
+              {myArt ? 'Redraw your ball' : 'Draw your ball'}
+            </button>
+          )}
           <button
             type="button"
             onClick={toggleSound}
             aria-pressed={!muted}
-            className="text-sm text-ink-soft underline decoration-dotted underline-offset-4"
+            className="underline decoration-dotted underline-offset-4"
           >
             {muted ? 'Sound off' : 'Sound on'}
           </button>
@@ -209,7 +267,10 @@ function Play({ data, reportShot, shotError }: PlayProps) {
           {shotError}
         </p>
       )}
-      {sunk && !isPractice && <ResultCard data={data} sunk={sunk} onPractice={handlePractice} />}
+      {isDrawing && (
+        <BallEditor current={myArt} onClose={() => setIsDrawing(false)} onSaved={(art) => void handleArtSaved(art)} />
+      )}
+      {sunk && !isPractice && !isDrawing && <ResultCard data={data} sunk={sunk} onPractice={handlePractice} />}
     </main>
   );
 }

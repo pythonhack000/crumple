@@ -27,6 +27,7 @@ const key = {
   dayCount: 'day-count',
   leaders: 'leaders',
   levelQueue: 'level-queue',
+  ballArt: 'ball-art',
   round: (day: string) => `round:${day}`,
   postRound: (postId: string) => `post:${postId}`,
   attempts: (day: string) => `attempts:${day}`,
@@ -152,7 +153,7 @@ export async function getPile(dayKey: string, username: string | undefined): Pro
     const [x, y, owner] = row.member.split(',');
     const px = Number(x);
     const py = Number(y);
-    return Number.isFinite(px) && Number.isFinite(py) ? [{ x: px, y: py, mine: owner === username }] : [];
+    return Number.isFinite(px) && Number.isFinite(py) && owner ? [{ x: px, y: py, mine: owner === username, owner }] : [];
   });
 }
 
@@ -236,4 +237,26 @@ export async function takeQueuedLevel(): Promise<Level | undefined> {
   if (!first) return undefined;
   await redis.zRem(key.levelQueue, [first.member]);
   return parseLevel(parseJson(first.member));
+}
+
+// Player-drawn balls
+
+const MAX_ARTS_PER_RESPONSE = 40;
+
+export async function setBallArt(username: string, art: string | null): Promise<void> {
+  if (art === null) await redis.hDel(key.ballArt, [username]);
+  else await redis.hSet(key.ballArt, { [username]: art });
+}
+
+/** Drawn balls for these players (the most recent pile owners first). */
+export async function getBallArts(usernames: string[]): Promise<Record<string, string>> {
+  const unique = [...new Set(usernames)].slice(0, MAX_ARTS_PER_RESPONSE);
+  if (unique.length === 0) return {};
+  const values = await redis.hMGet(key.ballArt, unique);
+  return Object.fromEntries(
+    unique.flatMap((name, index) => {
+      const art = values[index];
+      return art ? [[name, art]] : [];
+    })
+  );
 }

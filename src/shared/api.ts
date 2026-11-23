@@ -21,7 +21,7 @@ export type MyRound = {
 };
 
 /** A missed ball lying on the shared table. */
-export type PileBall = { x: number; y: number; mine: boolean };
+export type PileBall = { x: number; y: number; mine: boolean; owner: string };
 
 export type PlayerStats = {
   username: string;
@@ -47,6 +47,8 @@ export type InitResponse = {
   ghosts: Point[][];
   /** Everyone's missed balls on today's shared table, oldest first. */
   pile: PileBall[];
+  /** Drawn balls by username: the viewer's own and those of pile owners. */
+  arts: Record<string, string>;
   /** Post of the round that is open now, when it is not this one. */
   todayPostId: string | null;
 };
@@ -66,6 +68,7 @@ export type ShotResponse = {
   leaders: LeaderRow[];
   ghosts: Point[][];
   pile: PileBall[];
+  arts: Record<string, string>;
   /** False once the player already sank this round: the shot was practice. */
   counted: boolean;
 };
@@ -73,4 +76,9 @@ export type ShotResponse = {
 export type ErrorResponse = {
   status: 'error';
   message: string;
+};
+
+export type BallArtResponse = {
+  type: 'ball';
+  art: string | null;
 };
