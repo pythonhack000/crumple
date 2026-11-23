@@ -39,7 +39,7 @@ export function TryLevel({ level, title, arts, username, onSunk, onClose }: TryL
       onLaunch: () => setMessage(''),
       onResult: (result) => {
         if (result.sunk) {
-          setMessage(`In! ${'★'.repeat(result.stars)}`);
+          setMessage('In the bin');
           latest.current.onSunk?.();
         } else {
           setMessage('Missed');

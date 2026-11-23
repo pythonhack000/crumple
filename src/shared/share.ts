@@ -7,8 +7,6 @@ export const TWIST_LABELS: Record<Twist, { name: string; rule: string }> = {
   'moving-bin': { name: 'Moving bin day', rule: 'The bin dodges once you throw.' },
 };
 
-const MAX_SQUARES = 10;
-
 export type ShareInput = {
   dayNumber: number;
   levelName: string;
@@ -20,17 +18,22 @@ export type ShareInput = {
   names: string[];
 };
 
-/** A spoiler-free result to paste in the comments: no path, no aim, just how it went. */
+const NUMBER_WORDS = ['', 'once', 'twice'];
+
+/**
+ * A spoiler-free result to paste in the comments, written the way a person
+ * would type it: no path, no aim, no emoji.
+ */
 export function shareText(input: ShareInput): string {
   const misses = input.attempt - 1;
-  // A crumpled sheet for each miss, the bin for the throw that went in.
-  const throws = input.attempt <= MAX_SQUARES ? `${'📄'.repeat(misses)}🗑️` : `📄×${misses} 🗑️`;
-  const stars = '★'.repeat(input.stars) + '☆'.repeat(Math.max(0, input.starCount - input.stars));
-  const twist = input.twist ? ` · ${TWIST_LABELS[input.twist].name}` : '';
+  const twist = input.twist ? ` (${TWIST_LABELS[input.twist].name.toLowerCase()})` : '';
   const story =
     misses === 0
-      ? 'in on the first throw'
-      : `${misses} ${misses === 1 ? 'miss' : 'misses'}, then in on throw ${input.attempt}`;
-  const details = [stars, `${input.score} points`, ...input.names.slice(0, 2)].filter(Boolean).join(' · ');
-  return [`Crumple #${input.dayNumber} · ${input.levelName}${twist}`, `${throws} ${story}`, details].join('\n');
+      ? 'Sank it on the first throw'
+      : `Missed ${NUMBER_WORDS[misses] ?? `${misses} times`}, sank it on throw ${input.attempt}`;
+  const stars = input.starCount > 0 ? `${input.stars} of ${input.starCount} stars` : '';
+  const details = [stars, `${input.score} points`, ...input.names.slice(0, 2).map((name) => name.toLowerCase())]
+    .filter(Boolean)
+    .join(', ');
+  return [`Crumple #${input.dayNumber}, ${input.levelName}${twist}`, story, details].join('\n');
 }

@@ -133,7 +133,7 @@ async function resultsComment(round: Round): Promise<string> {
     '',
     `${view.players} ${view.players === 1 ? 'player' : 'players'}, ${view.holesInOne} ${view.holesInOne === 1 ? 'hole in one' : 'holes in one'}.`,
     '',
-    ...(podium.length > 0 ? podium : ['Nobody sank it. Brutal.']),
+    ...(podium.length > 0 ? podium : ['Nobody got it in the bin']),
     '',
     ...helperLine,
     'Today’s level is up now.',
@@ -170,7 +170,7 @@ function withTwist(level: Level, dayNumber: number): Level {
 
 function roundTitle(dayNumber: number, level: Level): string {
   const byline = level.author ? ` by u/${level.author}` : '';
-  const twist = level.twist ? `${TWIST_LABELS[level.twist].name}! ` : '';
+  const twist = level.twist ? `${TWIST_LABELS[level.twist].name}, ` : '';
   return `${GAME_NAME} #${dayNumber}: ${twist}${level.name}${byline}`;
 }
 

@@ -10,12 +10,12 @@ test('a clean first-try sink is a hole in one and a swish', () => {
 
 test('one wall is a bank shot, many contacts a ricochet', () => {
   assert.deepEqual(nameShot({ ...none, walls: 1 }, 2), ['Bank shot']);
-  assert.deepEqual(nameShot({ ...none, walls: 2, pileBalls: 2 }, 3), ['Ricochet ×4']);
+  assert.deepEqual(nameShot({ ...none, walls: 2, pileBalls: 2 }, 3), ['4-bounce ricochet']);
 });
 
 test('bouncing off another player’s miss credits them first', () => {
   assert.deepEqual(nameShot({ ...none, pileBalls: 1, owners: ['quietfox'] }, 2), ['Assist from u/quietfox']);
-  assert.equal(nameShot({ ...none, pileBalls: 2, owners: ['a_b', 'c_d'] }, 2)[0], 'Assist from u/a_b +1');
+  assert.equal(nameShot({ ...none, pileBalls: 2, owners: ['a_b', 'c_d'] }, 2)[0], 'Assist from u/a_b and 1 more');
 });
 
 test('vents and bumpers get their own names', () => {

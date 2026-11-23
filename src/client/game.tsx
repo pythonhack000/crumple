@@ -23,13 +23,16 @@ import { useRound } from './oneshot/useRound';
 const MISS_RESTART_MS = 450;
 const SINK_RESTART_MS = 1100;
 
+const STAR_PATH = 'M10 1.5 L12.4 7.2 L18.5 7.6 L13.8 11.6 L15.3 17.6 L10 14.3 L4.7 17.6 L6.2 11.6 L1.5 7.6 L7.6 7.2 Z';
+
+/** The level's stars, drawn like the doodled stars on the page. */
 function Stars({ got, of }: { got: number; of: number }) {
   return (
-    <span aria-label={`${got} of ${of} stars`} className="tracking-[0.15em]">
+    <span aria-label={`${got} of ${of} stars`} className="inline-flex gap-1 self-center">
       {Array.from({ length: of }, (_, i) => (
-        <span key={i} className={i < got ? 'text-coral' : 'text-felt/30'}>
-          ★
-        </span>
+        <svg key={i} viewBox="0 0 20 20" className="h-5 w-5" aria-hidden="true">
+          <path d={STAR_PATH} strokeWidth="1.8" strokeLinejoin="round" className={i < got ? 'fill-coral stroke-coral' : 'fill-none stroke-felt/40'} />
+        </svg>
       ))}
     </span>
   );
@@ -72,7 +75,7 @@ async function copyResult(text: string) {
 }
 
 function ResultCard({ data, sunk, names, onPractice, onBuild }: CardProps) {
-  const headline = sunk.attempt === 1 ? 'One shot. In.' : `In on shot ${sunk.attempt}.`;
+  const headline = sunk.attempt === 1 ? 'Straight in' : `In on throw ${sunk.attempt}`;
   const result = shareText({
     dayNumber: data.round.dayNumber,
     levelName: data.round.level.name,
@@ -89,10 +92,13 @@ function ResultCard({ data, sunk, names, onPractice, onBuild }: CardProps) {
     <div className="absolute inset-x-3 bottom-3 rounded-2xl bg-ink p-5 text-felt">
       <p className="font-display text-4xl leading-tight">{headline}</p>
       {names.length > 0 && (
-        <p className="mt-1 flex flex-wrap gap-2">
+        <p className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
           {names.map((name) => (
-            <span key={name} className="-rotate-2 rounded-sm bg-coral px-2 font-display text-lg text-ink">
+            <span key={name} className="relative font-display text-xl text-coral">
               {name}
+              <svg aria-hidden="true" viewBox="0 0 100 6" preserveAspectRatio="none" className="absolute -bottom-0.5 left-0 h-1.5 w-full">
+                <path d="M1 4 C 25 1, 50 5, 75 2 S 95 3, 99 3" fill="none" strokeWidth="1.6" strokeLinecap="round" className="stroke-coral" vectorEffect="non-scaling-stroke" />
+              </svg>
             </span>
           ))}
         </p>
@@ -229,7 +235,7 @@ function Play({ data, reportShot, shotError }: PlayProps) {
               return;
             }
             // Not confirmed (network trouble or already scored): never leave the player stuck.
-            setFlash(`In! ${'★'.repeat(result.stars)}`);
+            setFlash('In the bin');
             window.setTimeout(() => {
               setFlash(null);
               restart.current();
@@ -238,7 +244,7 @@ function Play({ data, reportShot, shotError }: PlayProps) {
           return;
         }
         const shotName = result.sunk ? nameShot(result.stats, 0)[0] : undefined;
-        setFlash(result.sunk ? `In! ${shotName ?? '★'.repeat(result.stars)}` : 'Missed');
+        setFlash(result.sunk ? (shotName ? `In, ${shotName.toLowerCase()}` : 'In the bin') : 'Missed');
         window.setTimeout(
           () => {
             setFlash(null);
