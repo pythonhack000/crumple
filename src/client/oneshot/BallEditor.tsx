@@ -8,6 +8,24 @@ import { SketchButton } from './Sketchy';
 import { MATERIAL_LABELS } from './theme';
 
 const CANVAS = 240;
+/** The drawing alone (no material), kept in this browser so it can be edited again. */
+const STROKES_KEY = 'crumple-ball-strokes';
+
+function readStrokes(): string | null {
+  try {
+    return window.localStorage.getItem(STROKES_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeStrokes(canvas: HTMLCanvasElement) {
+  try {
+    window.localStorage.setItem(STROKES_KEY, canvas.toDataURL('image/png'));
+  } catch {
+    // Not kept for next time; the saved ball itself is unaffected.
+  }
+}
 
 type Tool = {
   id: string;
@@ -152,12 +170,14 @@ export function BallEditor({ current, material: startMaterial, onClose, onSaved 
   }, [material]);
 
   useEffect(() => {
+    // Only the drawing layer is reloaded, never the saved ball: that one has the old
+    // material baked in and would sit on top of a newly chosen one.
     const g = strokes.current?.getContext('2d');
-    if (!g || !current) return;
-    // An earlier ball comes back as one picture; it sits on top of the material.
+    const saved = current ? readStrokes() : null;
+    if (!g || !saved) return;
     const image = new Image();
     image.onload = () => g.drawImage(image, 0, 0, CANVAS, CANVAS);
-    image.src = current;
+    image.src = saved;
   }, [current]);
 
   const toCanvas = (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -216,6 +236,7 @@ export function BallEditor({ current, material: startMaterial, onClose, onSaved 
       if (!response.ok || !body || !('type' in body)) {
         throw new Error(body && 'message' in body ? body.message : 'Could not save your ball.');
       }
+      writeStrokes(strokes.current);
       onSaved(body.art, body.material);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not save your ball.');
