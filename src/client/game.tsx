@@ -105,7 +105,9 @@ function ResultCard({ data, sunk, names, onPractice, onBuild }: CardProps) {
       )}
       <p className="mt-1 flex items-baseline gap-3 text-lg">
         <Stars got={sunk.stars} of={data.round.level.stars.length} />
-        <span className="font-display text-2xl font-bold tabular-nums">{sunk.score}</span>
+        <span className="font-display text-2xl font-bold tabular-nums">
+          <CountUp value={sunk.score} />
+        </span>
         <span className="text-felt/70">points</span>
       </p>
       <p className="mt-1 text-sm text-felt/70">
@@ -139,6 +141,30 @@ type PlayProps = {
   reportShot: ReturnType<typeof useRound>['reportShot'];
   shotError: string | null;
 };
+
+const COUNT_UP_MS = 700;
+
+/** Counts a number up from zero once, unless the player asked for reduced motion. */
+function CountUp({ value }: { value: number }) {
+  const [shown, setShown] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? value : 0
+  );
+  useEffect(() => {
+    if (shown === value) return;
+    let frame = 0;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / COUNT_UP_MS);
+      setShown(Math.round(value * (1 - (1 - t) ** 3)));
+      if (t < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+    // Runs once per value; `shown` is the animation's own output.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  return <>{shown}</>;
+}
 
 const decoded = new Map<string, HTMLImageElement>();
 

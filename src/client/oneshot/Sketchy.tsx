@@ -44,9 +44,10 @@ type SketchLinkProps = ButtonHTMLAttributes<HTMLButtonElement> & { children: Rea
 /** A small hand-written link with a scribbled underline. */
 export function SketchLink({ children, className = '', ...rest }: SketchLinkProps) {
   return (
-    <button type="button" {...rest} className={`group relative font-display text-lg leading-none text-ink ${className}`}>
+    // The padding with matching negative margin gives a 44px touch target without moving the text.
+    <button type="button" {...rest} className={`group relative -my-3.5 py-3.5 font-display text-lg leading-none text-ink ${className}`}>
       <span>{children}</span>
-      <svg aria-hidden="true" viewBox="0 0 100 6" preserveAspectRatio="none" className="absolute -bottom-1 left-0 h-1.5 w-full">
+      <svg aria-hidden="true" viewBox="0 0 100 6" preserveAspectRatio="none" className="absolute bottom-2.5 left-0 h-1.5 w-full">
         <path d="M1 4 C 25 1, 50 5, 75 2 S 95 3, 99 3" fill="none" strokeWidth="1.6" strokeLinecap="round" className="stroke-ink/50 group-hover:stroke-coral" vectorEffect="non-scaling-stroke" />
       </svg>
     </button>
