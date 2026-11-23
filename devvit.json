@@ -1,0 +1,62 @@
+{
+  "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
+  "name": "crowd-hunch",
+  "post": {
+    "dir": "dist/client",
+    "entrypoints": {
+      "default": {
+        "inline": true,
+        "entry": "splash.html"
+      },
+      "game": {
+        "entry": "game.html"
+      }
+    }
+  },
+  "server": {
+    "dir": "dist/server",
+    "entry": "index.cjs"
+  },
+  "menu": {
+    "items": [
+      {
+        "label": "Hunch: open today's round",
+        "description": "Close yesterday and open today's question now",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/start-today"
+      },
+      {
+        "label": "Hunch: queue a question",
+        "description": "Add your own question to the daily queue",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/queue-question"
+      }
+    ]
+  },
+  "forms": {
+    "queueQuestion": "/internal/form/queue-question"
+  },
+  "triggers": {
+    "onAppInstall": "/internal/triggers/on-app-install"
+  },
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build"
+  },
+  "scheduler": {
+    "tasks": {
+      "new-day": {
+        "endpoint": "/internal/scheduler/new-day",
+        "cron": "0 0 * * *"
+      }
+    }
+  },
+  "permissions": {
+    "redis": true,
+    "reddit": {
+      "enable": true
+    }
+  }
+}
