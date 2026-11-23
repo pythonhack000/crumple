@@ -101,12 +101,13 @@ export function LevelEditor({ initial, arts, username, onClose, onShared }: Leve
     setStatus(null);
   };
 
+  // The page keeps its 360 x 600 shape and is letterboxed inside the space it gets, so the
+  // pointer is mapped through the SVG's own screen matrix, not the element's box.
   const toWorld = (event: ReactPointerEvent<SVGSVGElement>): Point => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    return {
-      x: clamp(((event.clientX - rect.left) / rect.width) * WORLD.width, WORLD.width),
-      y: clamp(((event.clientY - rect.top) / rect.height) * WORLD.height, WORLD.height),
-    };
+    const matrix = event.currentTarget.getScreenCTM();
+    if (!matrix) return { x: 0, y: 0 };
+    const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
+    return { x: clamp(point.x, WORLD.width), y: clamp(point.y, WORLD.height) };
   };
 
   const full = (what: string, count: number, max: number) => {
@@ -181,7 +182,7 @@ export function LevelEditor({ initial, arts, username, onClose, onShared }: Leve
   const preview = drag && (tool === 'shelf' || tool === 'fan') ? drag : null;
 
   return (
-    <div className="absolute inset-0 z-10 flex flex-col gap-2 bg-felt p-3 text-ink" role="dialog" aria-label="Build a level">
+    <div className="absolute inset-0 z-10 flex flex-col gap-1.5 bg-felt px-2 py-2 text-ink" role="dialog" aria-label="Build a level">
       <div className="flex items-center gap-2">
         <input
           value={name}
@@ -190,10 +191,17 @@ export function LevelEditor({ initial, arts, username, onClose, onShared }: Leve
           aria-label="Level name"
           className="min-w-0 flex-1 border-b-2 border-dashed border-ink/40 bg-transparent font-display text-2xl outline-none placeholder:text-ink-soft/60"
         />
+        <SketchLink
+          onClick={() => setHistory((past) => (past.length > 1 ? past.slice(0, -1) : past))}
+          disabled={history.length < 2}
+          className="disabled:opacity-30"
+        >
+          Undo
+        </SketchLink>
         <SketchLink onClick={onClose}>Close</SketchLink>
       </div>
       {level.basedOn && <p className="-mt-1 text-sm text-ink-soft">Remix of a level by u/{level.basedOn}</p>}
-      <div className="flex flex-wrap justify-center gap-1" role="radiogroup" aria-label="Tool">
+      <div className="flex flex-wrap justify-center gap-0.5" role="radiogroup" aria-label="Tool">
         {TOOLS.map((option) => (
           <SketchChip
             key={option.id}
@@ -210,18 +218,10 @@ export function LevelEditor({ initial, arts, username, onClose, onShared }: Leve
             {option.label}
           </SketchChip>
         ))}
-        <SketchChip
-          isSelected={false}
-          onClick={() => setHistory((past) => (past.length > 1 ? past.slice(0, -1) : past))}
-          disabled={history.length < 2}
-          className="disabled:opacity-30"
-        >
-          <ToolIcon tool="undo" />
-          Undo
-        </SketchChip>
       </div>
       <div className="relative min-h-0 flex-1">
         <LevelSketch level={grab?.live ?? level} withPaper className="pointer-events-none absolute inset-0 h-full w-full" />
+        {/* Both layers letterbox the page the same way (xMidYMid meet), so they line up. */}
         <svg
           viewBox={`0 0 ${WORLD.width} ${WORLD.height}`}
           className="relative h-full w-full touch-none"
@@ -266,7 +266,7 @@ export function LevelEditor({ initial, arts, username, onClose, onShared }: Leve
             (grab?.live ?? level).walls.flatMap((wall, index) => {
               const { a, b } = wallEnds(wall);
               return [a, b].map((end, j) => (
-                <circle key={`${index}${j}`} cx={end.x} cy={end.y} r="7" className="fill-felt stroke-coral" strokeWidth="2" />
+                <circle key={`${index}${j}`} cx={end.x} cy={end.y} r="9" className="fill-felt stroke-coral" strokeWidth="2.5" />
               ));
             })}
           {pendingVent && <circle cx={pendingVent.x} cy={pendingVent.y} r={PHYSICS.portalRadius} className="fill-none stroke-coral" strokeWidth="3" strokeDasharray="4 4" />}

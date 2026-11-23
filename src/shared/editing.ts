@@ -12,8 +12,8 @@ export type Pick =
   | { kind: 'fan'; index: number }
   | { kind: 'vent'; index: number; end: 'a' | 'b' };
 
-const GRAB = 22;
-const HANDLE = 16;
+const GRAB = 28;
+const HANDLE = 22;
 const MIN_WALL = 24;
 const MAX_WALL = 360;
 

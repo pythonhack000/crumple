@@ -64,9 +64,9 @@ export function SketchChip({ children, isSelected, className = '', ...rest }: Sk
     <button
       type="button"
       {...rest}
-      className={`relative flex h-14 w-14 flex-col items-center justify-center gap-0.5 font-display text-[0.72rem] leading-none text-ink ${className}`}
+      className={`relative flex h-12 w-[2.3rem] shrink-0 flex-col items-center justify-center gap-0.5 font-display text-[0.64rem] leading-none text-ink ${className}`}
     >
-      <svg aria-hidden="true" viewBox="0 0 56 56" className="absolute inset-0 h-full w-full overflow-visible">
+      <svg aria-hidden="true" viewBox="0 0 56 56" preserveAspectRatio="none" className="absolute inset-0 h-full w-full overflow-visible">
         <path
           d="M6 8 C 20 4, 38 6, 50 5 C 53 20, 52 36, 51 50 C 36 53, 20 51, 5 51 C 3 36, 5 20, 6 8 Z"
           fill="none"
@@ -84,7 +84,7 @@ export function SketchChip({ children, isSelected, className = '', ...rest }: Sk
 export function ToolIcon({ tool }: { tool: string }) {
   const common = { fill: 'none', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, className: 'stroke-ink' };
   return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-6 w-6">
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5">
       {tool === 'shelf' && (
         <g {...common}>
           <path d="M3 15 L21 9" />
