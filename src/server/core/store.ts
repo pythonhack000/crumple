@@ -39,6 +39,7 @@ const key = {
   ghosts: (day: string) => `ghosts:${day}`,
   holesInOne: (day: string) => `hio:${day}`,
   pile: (day: string) => `pile:${day}`,
+  assists: (day: string) => `assists:${day}`,
   player: (username: string) => `player:${username}`,
 };
 
@@ -327,4 +328,23 @@ export async function setBallMaterial(username: string, material: Material): Pro
 
 export async function getBallMaterial(username: string | undefined): Promise<Material> {
   return username ? parseMaterial(await redis.hGet(key.ballMaterial, username)) : 'paper';
+}
+
+/** Players who have a missed ball on today's table right now. */
+export async function pileOwners(dayKey: string): Promise<Set<string>> {
+  const rows = await redis.zRange(key.pile(dayKey), 0, -1, { by: 'rank' });
+  return new Set(rows.map((row) => row.member.split(',')[2] ?? '').filter(Boolean));
+}
+
+export const ASSIST_POINTS = 5;
+
+/** Credits a player whose missed ball helped someone else in. */
+export async function addAssist(dayKey: string, owner: string): Promise<void> {
+  await redis.zIncrBy(key.assists(dayKey), owner, 1);
+  await addToTotal(owner, ASSIST_POINTS);
+}
+
+export async function topAssist(dayKey: string): Promise<{ username: string; count: number } | undefined> {
+  const [top] = await redis.zRange(key.assists(dayKey), 0, 0, { by: 'rank', reverse: true });
+  return top ? { username: top.member, count: top.score } : undefined;
 }

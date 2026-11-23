@@ -4,7 +4,9 @@ import type { ErrorResponse, SubmitLevelResponse } from '../../shared/api';
 import { movePiece, pickPiece, wallEnds } from '../../shared/editing';
 import type { Pick } from '../../shared/editing';
 import type { Level, Point } from '../../shared/level';
-import { LIMITS, WORLD } from '../../shared/level';
+import { LIMITS, TWISTS, WORLD } from '../../shared/level';
+import type { Twist } from '../../shared/level';
+import { TWIST_LABELS } from '../../shared/share';
 import { PHYSICS } from '../../shared/sim';
 import { LevelSketch, SketchButton, SketchChip, SketchLink, ToolIcon } from './Sketchy';
 import { TryLevel } from './TryLevel';
@@ -218,6 +220,29 @@ export function LevelEditor({ initial, arts, username, onClose, onShared }: Leve
             {option.label}
           </SketchChip>
         ))}
+      </div>
+      <div className="flex flex-wrap items-baseline justify-center gap-x-3 gap-y-1" role="radiogroup" aria-label="Rule">
+        <span className="font-display text-base text-ink-soft">Rule</span>
+        {([undefined, ...TWISTS] as (Twist | undefined)[]).map((option) => {
+          const isOn = level.twist === option;
+          const label = option ? TWIST_LABELS[option].name.replace(' day', '') : 'Normal';
+          return (
+            <button
+              key={label}
+              type="button"
+              role="radio"
+              aria-checked={isOn}
+              title={option ? TWIST_LABELS[option].rule : 'Normal physics.'}
+              onClick={() => {
+                const { twist: _old, ...rest } = level;
+                commit(option ? { ...rest, twist: option } : rest);
+              }}
+              className={`font-display text-base ${isOn ? 'text-coral underline underline-offset-4' : 'text-ink-soft'}`}
+            >
+              {label}
+            </button>
+          );
+        })}
       </div>
       <div className="relative min-h-0 flex-1">
         <LevelSketch level={grab?.live ?? level} withPaper className="pointer-events-none absolute inset-0 h-full w-full" />

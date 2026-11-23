@@ -11,7 +11,7 @@ const MARGIN = 80;
  */
 export function parseShot(body: unknown, starCount: number): ShotRequest | undefined {
   if (typeof body !== 'object' || body === null) return undefined;
-  const { sunk, stars, path, rest } = body as Record<string, unknown>;
+  const { sunk, stars, path, rest, owners } = body as Record<string, unknown>;
   if (typeof sunk !== 'boolean') return undefined;
   if (typeof stars !== 'number' || !Number.isInteger(stars) || stars < 0 || stars > starCount) return undefined;
   if (!Array.isArray(path) || path.length > PHYSICS.pathMax) return undefined;
@@ -24,7 +24,16 @@ export function parseShot(body: unknown, starCount: number): ShotRequest | undef
     points.push({ x: Math.round(x), y: Math.round(y) });
   }
   if (sunk && points.length === 0) return undefined;
-  return { sunk, stars: sunk ? stars : 0, path: points, rest: sunk ? null : parseRest(rest) };
+  return { sunk, stars: sunk ? stars : 0, path: points, rest: sunk ? null : parseRest(rest), owners: sunk ? parseOwners(owners) : [] };
+}
+
+const USERNAME = /^[A-Za-z0-9_-]{3,40}$/;
+const MAX_OWNERS = 5;
+
+function parseOwners(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const names = value.filter((name): name is string => typeof name === 'string' && USERNAME.test(name));
+  return [...new Set(names)].slice(0, MAX_OWNERS);
 }
 
 function parseRest(value: unknown): Point | null {

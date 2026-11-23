@@ -3,10 +3,12 @@ import './index.css';
 import { StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type Phaser from 'phaser';
-import { navigateToPost, showLoginPrompt } from '@devvit/web/client';
+import { navigateToPost, showLoginPrompt, showToast } from '@devvit/web/client';
 import type { InitResponse, LeaderRow, MyRound } from '../shared/api';
 import type { Material } from '../shared/ball-art';
 import type { Level } from '../shared/level';
+import { shareText, TWIST_LABELS } from '../shared/share';
+import { nameShot } from '../shared/shot-names';
 import { PHYSICS } from '../shared/sim';
 import { createGame } from './oneshot/scene';
 import type { SceneData, ShotResult } from './oneshot/scene';
@@ -54,17 +56,47 @@ function Board({ leaders, username }: { leaders: LeaderRow[]; username: string |
 type CardProps = {
   data: InitResponse;
   sunk: NonNullable<MyRound['sunk']>;
+  names: string[];
   onPractice: () => void;
   onBuild: () => void;
 };
 
-function ResultCard({ data, sunk, onPractice, onBuild }: CardProps) {
+async function copyResult(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('Copied. Paste it in the comments.');
+  } catch (error) {
+    console.error('Copying the result failed', error);
+    showToast('Could not copy. Long-press the result to copy it.');
+  }
+}
+
+function ResultCard({ data, sunk, names, onPractice, onBuild }: CardProps) {
   const headline = sunk.attempt === 1 ? 'One shot. In.' : `In on shot ${sunk.attempt}.`;
+  const result = shareText({
+    dayNumber: data.round.dayNumber,
+    levelName: data.round.level.name,
+    twist: data.round.level.twist,
+    attempt: sunk.attempt,
+    stars: sunk.stars,
+    starCount: data.round.level.stars.length,
+    score: sunk.score,
+    names,
+  });
   const ghostLine =
     data.ghosts.length > 0 ? `The faint lines are ${data.ghosts.length} other ways in.` : 'You’re the first one in today.';
   return (
     <div className="absolute inset-x-3 bottom-3 rounded-2xl bg-ink p-5 text-felt">
       <p className="font-display text-4xl leading-tight">{headline}</p>
+      {names.length > 0 && (
+        <p className="mt-1 flex flex-wrap gap-2">
+          {names.map((name) => (
+            <span key={name} className="-rotate-2 rounded-sm bg-coral px-2 font-display text-lg text-ink">
+              {name}
+            </span>
+          ))}
+        </p>
+      )}
       <p className="mt-1 flex items-baseline gap-3 text-lg">
         <Stars got={sunk.stars} of={data.round.level.stars.length} />
         <span className="font-display text-2xl font-bold tabular-nums">{sunk.score}</span>
@@ -75,7 +107,11 @@ function ResultCard({ data, sunk, onPractice, onBuild }: CardProps) {
         {ghostLine}
       </p>
       <Board leaders={data.leaders} username={data.me?.username} />
-      <div className="mt-4 flex gap-2">
+      <pre className="mt-3 rounded-md bg-felt/10 px-3 py-2 font-sans text-sm whitespace-pre-wrap select-text">{result}</pre>
+      <SketchButton tone="paper" onClick={() => void copyResult(result)} className="mt-3 w-full text-lg">
+        Share result
+      </SketchButton>
+      <div className="mt-2 flex gap-2">
         <SketchButton onClick={onPractice} className="flex-1 px-2 text-base whitespace-nowrap">
           Go for stars
         </SketchButton>
@@ -127,6 +163,7 @@ function Play({ data, reportShot, shotError }: PlayProps) {
   const [hasLaunched, setHasLaunched] = useState((data.mine?.attempts ?? 0) > 0);
   const [isPractice, setIsPractice] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  const [shotNames, setShotNames] = useState<string[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [material, setMaterialState] = useState(data.material);
   const materialRef = useRef(material);
@@ -167,7 +204,9 @@ function Play({ data, reportShot, shotError }: PlayProps) {
       onLaunch: () => setHasLaunched(true),
       onResult: (result: ShotResult) => {
         const counts = !latest.current.isPractice && isLoggedIn && !isClosed;
-        const report = counts ? latest.current.reportShot(result) : Promise.resolve(undefined);
+        const report = counts
+          ? latest.current.reportShot({ sunk: result.sunk, stars: result.stars, path: result.path, rest: result.rest, owners: result.stats.owners })
+          : Promise.resolve(undefined);
         if (!result.sunk && result.rest) {
           // Show the miss at once; the server's shared pile replaces it when it answers.
           const mineNow = { ...result.rest, mine: true, owner: username ?? '' };
@@ -182,6 +221,7 @@ function Play({ data, reportShot, shotError }: PlayProps) {
         if (result.sunk && counts) {
           void report.then((response) => {
             if (response?.mine.sunk) {
+              setShotNames(nameShot(result.stats, response.mine.sunk.attempt));
               // Confirmed: the result card shows; redraw with everyone's paths.
               if (!response.ghosts.length) return;
               table.current = { ...table.current, ghosts: response.ghosts };
@@ -197,7 +237,8 @@ function Play({ data, reportShot, shotError }: PlayProps) {
           });
           return;
         }
-        setFlash(result.sunk ? `In! ${'★'.repeat(result.stars)}` : 'Missed');
+        const shotName = result.sunk ? nameShot(result.stats, 0)[0] : undefined;
+        setFlash(result.sunk ? `In! ${shotName ?? '★'.repeat(result.stars)}` : 'Missed');
         window.setTimeout(
           () => {
             setFlash(null);
@@ -264,6 +305,11 @@ function Play({ data, reportShot, shotError }: PlayProps) {
           {isLoggedIn && <SketchLink onClick={() => setIsDrawing(true)}>{myArt ? 'Your ball' : 'Draw your ball'}</SketchLink>}
           <SketchLink onClick={() => setIsSettingsOpen(true)}>Settings</SketchLink>
         </div>
+        {level.twist && (
+          <p className="mt-1 font-display text-base text-coral">
+            {TWIST_LABELS[level.twist].name}: {TWIST_LABELS[level.twist].rule}
+          </p>
+        )}
       </header>
       {!isLoggedIn && (
         <button
@@ -294,7 +340,7 @@ function Play({ data, reportShot, shotError }: PlayProps) {
         />
       )}
       {sunk && !isPractice && !isDrawing && !panel && (
-        <ResultCard data={data} sunk={sunk} onPractice={handlePractice} onBuild={() => {
+        <ResultCard data={data} sunk={sunk} names={shotNames} onPractice={handlePractice} onBuild={() => {
             setRemixFrom(undefined);
             setPanel('editor');
           }} />

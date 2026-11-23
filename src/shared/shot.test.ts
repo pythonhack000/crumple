@@ -16,7 +16,13 @@ test('parseShot accepts a sinking shot and rounds its path', () => {
       { x: 30, y: 40 },
     ],
     rest: null,
+    owners: [],
   });
+});
+
+test('parseShot keeps valid assist owners on a sink only', () => {
+  assert.deepEqual(parseShot({ sunk: true, stars: 0, path, owners: ['quietfox', 'quietfox', '<x>', 7] }, 3)?.owners, ['quietfox']);
+  assert.deepEqual(parseShot({ sunk: false, stars: 0, path, owners: ['quietfox'] }, 3)?.owners, []);
 });
 
 test('parseShot keeps where a missed ball stopped', () => {

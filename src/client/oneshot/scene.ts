@@ -4,13 +4,13 @@ import type { Material } from '../../shared/ball-art';
 import type { Level, Point } from '../../shared/level';
 import { WORLD } from '../../shared/level';
 import { createSim, gravityPerStep, launchVelocity, PHYSICS, previewArc, usableLeftovers } from '../../shared/sim';
-import type { Sim, SimEvent } from '../../shared/sim';
+import type { ShotStats, Sim, SimEvent } from '../../shared/sim';
 import { materialBall, paperBall, penBlock, penCircle, penLine, penStar, rectCorners, seeded } from './sketch';
 import { setAimPower, setHoldBreath, sfx, unlock } from './audio';
 import { getPrefs } from './prefs';
 import { COLORS } from './theme';
 
-export type ShotResult = { sunk: boolean; stars: number; path: Point[]; rest: Point | null };
+export type ShotResult = { sunk: boolean; stars: number; path: Point[]; rest: Point | null; stats: ShotStats };
 
 export type SceneData = {
   level: Level;
@@ -49,6 +49,7 @@ export class PlayScene extends Phaser.Scene {
   private aim!: Phaser.GameObjects.Graphics;
   private trail!: Phaser.GameObjects.Graphics;
   private wind!: Phaser.GameObjects.Graphics;
+  private bin!: Phaser.GameObjects.Graphics;
   private stars: Phaser.GameObjects.Graphics[] = [];
   private bumpers: Phaser.GameObjects.Graphics[] = [];
   private dragStart: Point | null = null;
@@ -257,6 +258,7 @@ export class PlayScene extends Phaser.Scene {
     const top = cup.y - PHYSICS.cupDepth / 2 - 2;
     const bottom = cup.y + PHYSICS.cupDepth / 2 + 6;
     const g = this.add.graphics();
+    this.bin = g;
     const outline = [
       { x: cup.x - half - 3, y: top },
       { x: cup.x + half + 3, y: top },
@@ -406,8 +408,15 @@ export class PlayScene extends Phaser.Scene {
         break;
       }
       case 'miss':
-        this.tweens.add({ targets: this.ball, alpha: 0.3, duration: 300 });
-        sfx.miss();
+        if (event.reason === 'shatter') {
+          this.burst(x, y, 'scrap', 0xcfe6f6, 26, 260);
+          this.ball.setAlpha(0);
+          this.cameras.main.shake(120, 0.006);
+          sfx.shatter();
+        } else {
+          this.tweens.add({ targets: this.ball, alpha: 0.3, duration: 300 });
+          sfx.miss();
+        }
         this.finish(false);
         break;
     }
@@ -417,7 +426,7 @@ export class PlayScene extends Phaser.Scene {
     if (this.finished) return;
     this.finished = true;
     this.setSlowMo(false);
-    const result = { sunk, stars: this.sim.stars, path: this.sim.path(), rest: this.sim.restPoint() };
+    const result = { sunk, stars: this.sim.stars, path: this.sim.path(), rest: this.sim.restPoint(), stats: this.sim.stats() };
     if (!sunk) {
       this.time.delayedCall(350, () => this.setup.onResult(result));
       return;
@@ -507,7 +516,7 @@ export class PlayScene extends Phaser.Scene {
     }
     if (this.sim.status !== 'flying') return;
 
-    const { cup } = this.setup.level;
+    const cup = this.sim.cupPosition();
     const { position: p, velocity: v } = this.sim.ball;
     const isNearBin = Math.hypot(p.x - cup.x, p.y - cup.y) < SLOWMO_RADIUS && v.y > 0 && p.y < cup.y;
     this.setSlowMo(isNearBin && getPrefs().slowMotion);
@@ -520,6 +529,7 @@ export class PlayScene extends Phaser.Scene {
       steps += 1;
     }
     const { position, angle } = this.sim.ball;
+    this.bin.x = this.sim.cupPosition().x - this.setup.level.cup.x;
     this.ball.setPosition(position.x, position.y);
     this.ball.setRotation(angle);
     this.trailPoints = [...this.trailPoints, { x: position.x, y: position.y }].slice(-TRAIL_LENGTH);

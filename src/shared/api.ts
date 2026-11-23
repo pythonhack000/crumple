@@ -62,6 +62,8 @@ export type ShotRequest = {
   path: Point[];
   /** Where a missed ball stopped, if it stayed on the table. */
   rest: Point | null;
+  /** Players whose missed balls this sinking shot bounced off. */
+  owners: string[];
 };
 
 export type ShotResponse = {

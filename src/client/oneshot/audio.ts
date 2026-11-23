@@ -313,6 +313,15 @@ export const sfx = {
     const chord = chordAt(step);
     chord.voicing.forEach((note, i) => ePiano(note + 12, t + 0.18 + i * 0.08, 1.2, 0.13, out));
   },
+  /** Glass day: the ball shatters into a cascade of high tinkles. */
+  shatter() {
+    const now = sfxNow();
+    if (!now) return;
+    burst(now.t, 0.08, 0.5, 6000, now.out, 'highpass');
+    for (let i = 0; i < 9; i += 1) {
+      osc(2600 + Math.random() * 3200, now.t + i * 0.03 + Math.random() * 0.02, 0.09, 'sine', 0.12, now.out);
+    }
+  },
   miss() {
     const now = sfxNow();
     if (!now) return;

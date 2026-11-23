@@ -4,7 +4,8 @@ import { builtInLevelFor } from '../../src/shared/levels';
 
 const state = new URLSearchParams(location.search).get('state') ?? 'fresh';
 const levelNumber = Number(new URLSearchParams(location.search).get('level') ?? '1');
-const level = builtInLevelFor(levelNumber);
+const twist = new URLSearchParams(location.search).get('twist');
+const level = twist ? { ...builtInLevelFor(levelNumber), twist } : builtInLevelFor(levelNumber);
 const ghost = (dx: number) =>
   Array.from({ length: 40 }, (_, i) => ({
     x: level.ball.x + ((level.cup.x - level.ball.x) * i) / 39 + dx,

@@ -4,6 +4,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { requestExpandedMode } from '@devvit/web/client';
 import type { InitResponse } from '../shared/api';
+import { TWIST_LABELS } from '../shared/share';
 import { LevelSketch, Scribble, SketchButton } from './oneshot/Sketchy';
 import { useRound } from './oneshot/useRound';
 
@@ -44,6 +45,11 @@ export function Splash() {
         <p className="text-sm text-ink-soft">
           Crumple #{data.round.dayNumber}. One level for everyone, every miss stays on the table.{streak}
         </p>
+        {data.round.level.twist && (
+          <p className="-rotate-2 self-start rounded-sm bg-coral px-2 font-display text-lg text-ink">
+            {TWIST_LABELS[data.round.level.twist].name}: {TWIST_LABELS[data.round.level.twist].rule}
+          </p>
+        )}
         <div className="-rotate-1">
           <h1 className="font-display text-[2.5rem] leading-[1.05] font-normal">{data.round.level.name}</h1>
           <Scribble className="mt-1 max-w-[16rem]" />

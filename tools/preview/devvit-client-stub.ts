@@ -3,3 +3,4 @@ export const requestExpandedMode = () => {};
 export const navigateToPost = () => {};
 export const showLoginPrompt = () => {};
 export const showShareSheet = async () => {};
+export const showToast = (text: unknown) => console.info('toast', text);

@@ -3,6 +3,9 @@ import type { MyRound, PlayerStats, RoundView, ShotRequest } from '../../shared/
 import { dayKeyOf, daysBetween, nextStreak } from '../../shared/game';
 import { cleanTableBonus, shotScore } from '../../shared/level';
 import type { Level } from '../../shared/level';
+import { TWIST_LABELS } from '../../shared/share';
+import { TWISTS } from '../../shared/level';
+import { findSolution } from '../../shared/sim';
 import { builtInLevelFor } from '../../shared/levels';
 import * as store from './store';
 import type { Round } from './store';
@@ -96,6 +99,11 @@ export async function recordShot(round: Round, username: string, shot: ShotReque
     const result = { attempt, stars: shot.stars, score: shotScore(attempt, shot.stars, pile), bonus: cleanTableBonus(pile) };
     if (await store.recordSink(round.dayKey, username, result, shot.path)) {
       await store.addToTotal(username, result.score);
+      // Credit only real, other people's balls that are on today's table.
+      const onTable = await store.pileOwners(round.dayKey);
+      for (const owner of shot.owners) {
+        if (owner !== username && onTable.has(owner)) await store.addAssist(round.dayKey, owner);
+      }
     }
   }
   return { mine: await store.getMyRound(round.dayKey, username), counted: true };
@@ -111,8 +119,15 @@ async function setLevelMakerFlair(username: string): Promise<void> {
 }
 
 async function resultsComment(round: Round): Promise<string> {
-  const [view, top] = await Promise.all([buildRoundView(round), store.getDayLeaders(round.dayKey, RESULTS_TOP)]);
+  const [view, top, helper] = await Promise.all([
+    buildRoundView(round),
+    store.getDayLeaders(round.dayKey, RESULTS_TOP),
+    store.topAssist(round.dayKey),
+  ]);
   const podium = top.map((row, index) => `${index + 1}. u/${row.username}: ${row.score}`);
+  const helperLine = helper
+    ? [`Most helpful miss: u/${helper.username}, whose balls helped ${helper.count} ${helper.count === 1 ? 'person' : 'people'} in.`, '']
+    : [];
   return [
     `**${GAME_NAME} #${round.dayNumber}: ${round.level.name}, final results**`,
     '',
@@ -120,6 +135,7 @@ async function resultsComment(round: Round): Promise<string> {
     '',
     ...(podium.length > 0 ? podium : ['Nobody sank it. Brutal.']),
     '',
+    ...helperLine,
     'Today’s level is up now.',
   ].join('\n');
 }
@@ -140,9 +156,22 @@ export async function closeRound(round: Round): Promise<void> {
   }
 }
 
+
+const TWIST_EVERY = 7;
+
+/** Every seventh day gets a twist, if the level can still be beaten with it. */
+function withTwist(level: Level, dayNumber: number): Level {
+  if (level.twist || dayNumber % TWIST_EVERY !== 0) return level;
+  const twist = TWISTS[Math.floor(dayNumber / TWIST_EVERY) % TWISTS.length];
+  if (!twist) return level;
+  const twisted = { ...level, twist };
+  return findSolution(twisted) ? twisted : level;
+}
+
 function roundTitle(dayNumber: number, level: Level): string {
   const byline = level.author ? ` by u/${level.author}` : '';
-  return `${GAME_NAME} #${dayNumber}: ${level.name}${byline}`;
+  const twist = level.twist ? `${TWIST_LABELS[level.twist].name}! ` : '';
+  return `${GAME_NAME} #${dayNumber}: ${twist}${level.name}${byline}`;
 }
 
 /**
@@ -176,7 +205,7 @@ export async function startDay(now: Date): Promise<Round> {
 
   const dayNumber = await store.nextDayNumber();
   const community = await store.takeTopCommunityLevel();
-  const level = community ? { ...community.level, author: community.author } : builtInLevelFor(dayNumber);
+  const level = withTwist(community ? { ...community.level, author: community.author } : builtInLevelFor(dayNumber), dayNumber);
   if (community) await setLevelMakerFlair(community.author);
   const post = await reddit.submitCustomPost({ title: roundTitle(dayNumber, level), entry: 'default' });
   const round: Round = { dayKey: today, dayNumber, level, postId: post.id, status: 'open' };

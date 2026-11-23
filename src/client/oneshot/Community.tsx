@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { CommunityLevel, ErrorResponse, LevelsResponse, VoteResponse } from '../../shared/api';
+import { TWIST_LABELS } from '../../shared/share';
 import { LevelSketch, SketchButton, SketchLink } from './Sketchy';
 import { TryLevel } from './TryLevel';
 
@@ -93,6 +94,7 @@ export function Community({ arts, username, onBuild, onRemix, onClose }: Communi
                   by u/{item.author}, {item.votes} {item.votes === 1 ? 'upvote' : 'upvotes'}
                 </p>
                 {item.level.basedOn && <p className="truncate text-xs text-ink-soft">remix of u/{item.level.basedOn}</p>}
+                {item.level.twist && <p className="truncate text-xs text-coral">{TWIST_LABELS[item.level.twist].name}</p>}
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1 text-sm">
                 <SketchLink onClick={() => setTrying(item)}>Try it</SketchLink>
