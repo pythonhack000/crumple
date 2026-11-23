@@ -289,3 +289,24 @@ export function simulateShot(level: Level, drag: Point): { sunk: boolean; stars:
   }
   return { sunk: sim.status === 'sunk', stars: sim.stars, steps };
 }
+
+export const SOLVER = {
+  angleStep: 2,
+  powerSteps: 10,
+} as const;
+
+/**
+ * Looks for any shot that sinks the ball, trying angles and powers in a grid.
+ * Returns the first winning drag, or null if the grid finds none.
+ */
+export function findSolution(level: Level): Point | null {
+  for (let power = SOLVER.powerSteps; power >= 1; power -= 1) {
+    const length = (PHYSICS.fullPowerDrag * power) / SOLVER.powerSteps;
+    for (let angle = 0; angle < 360; angle += SOLVER.angleStep) {
+      const radians = (angle * Math.PI) / 180;
+      const drag = { x: Math.cos(radians) * length, y: Math.sin(radians) * length };
+      if (simulateShot(level, drag).sunk) return drag;
+    }
+  }
+  return null;
+}

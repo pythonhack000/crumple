@@ -36,8 +36,21 @@ const pile = Array.from({ length: state === 'fresh' ? 0 : 18 }, (_, i) => ({
 const arts: Record<string, string> = {};
 const ghosts = state === 'sunk' ? [ghost(-20), ghost(0), ghost(25)] : [];
 
+const community = [3, 5, 7].map((n, i) => ({
+  id: String(i + 1),
+  level: { ...builtInLevelFor(n), name: ['Lunch break chaos', 'Printer jam', 'The boss is watching'][i] ?? 'Level', author: ['quietfox', 'tea_and_maps', 'Afraid-Emotion-6182'][i] ?? null },
+  author: ['quietfox', 'tea_and_maps', 'Afraid-Emotion-6182'][i] ?? 'someone',
+  votes: [42, 17, 3][i] ?? 0,
+  voted: i === 1,
+}));
+
 window.fetch = async (input, init) => {
   const url = String(input);
+  if (url.includes('/api/levels')) {
+    if (url.endsWith('/vote')) return new Response(JSON.stringify({ type: 'vote', votes: 43 }), { status: 200 });
+    if (init?.method === 'POST') return new Response(JSON.stringify({ type: 'submitted', id: '9' }), { status: 200 });
+    return new Response(JSON.stringify({ type: 'levels', levels: community }), { status: 200 });
+  }
   if (url.includes('/api/init')) {
     const body = { type: 'init', round, me: state === 'guest' ? null : me, mine: state === 'guest' ? null : mine, leaders, ghosts, pile, arts, todayPostId: null };
     return new Response(JSON.stringify(body), { status: 200 });

@@ -11,6 +11,8 @@ import { createGame } from './oneshot/scene';
 import type { SceneData, ShotResult } from './oneshot/scene';
 import { isMuted, setMuted } from './oneshot/audio';
 import { BallEditor } from './oneshot/BallEditor';
+import { Community } from './oneshot/Community';
+import { LevelEditor } from './oneshot/LevelEditor';
 import { SketchButton } from './oneshot/Sketchy';
 import { useRound } from './oneshot/useRound';
 
@@ -51,9 +53,10 @@ type CardProps = {
   data: InitResponse;
   sunk: NonNullable<MyRound['sunk']>;
   onPractice: () => void;
+  onBuild: () => void;
 };
 
-function ResultCard({ data, sunk, onPractice }: CardProps) {
+function ResultCard({ data, sunk, onPractice, onBuild }: CardProps) {
   const headline = sunk.attempt === 1 ? 'One shot. In.' : `In on shot ${sunk.attempt}.`;
   const ghostLine =
     data.ghosts.length > 0 ? `The faint lines are ${data.ghosts.length} other ways in.` : 'You’re the first one in today.';
@@ -73,6 +76,9 @@ function ResultCard({ data, sunk, onPractice }: CardProps) {
       <div className="mt-4 flex gap-2">
         <SketchButton onClick={onPractice} className="flex-1">
           Practice for stars
+        </SketchButton>
+        <SketchButton onClick={onBuild} className="flex-1">
+          Build a level
         </SketchButton>
         {data.todayPostId && (
           <SketchButton onClick={() => navigateToPost(data.todayPostId as `t3_${string}`)} className="flex-1">
@@ -130,6 +136,8 @@ function Play({ data, reportShot, shotError }: PlayProps) {
   const isClosed = data.round.status === 'closed';
   const username = data.me?.username;
   const [isDrawing, setIsDrawing] = useState(false);
+  const [panel, setPanel] = useState<'community' | 'editor' | null>(null);
+  const [artImages, setArtImages] = useState<Record<string, HTMLImageElement>>({});
   const [myArt, setMyArt] = useState<string | null>(username ? (data.arts[username] ?? null) : null);
 
   // Scene callbacks outlive renders, so they read the latest values from refs.
@@ -163,6 +171,7 @@ function Play({ data, reportShot, shotError }: PlayProps) {
           if (!response) return;
           const arts = await decodeArts(response.arts);
           table.current = { ...table.current, pile: response.pile, arts: { ...table.current.arts, ...arts } };
+          setArtImages(table.current.arts);
         });
         if (result.sunk && counts) {
           // Redraw with everyone's paths once the server confirms the sink.
@@ -190,6 +199,7 @@ function Play({ data, reportShot, shotError }: PlayProps) {
     void decodeArts(data.arts).then((arts) => {
       if (isCancelled) return;
       table.current = { ...table.current, arts };
+      setArtImages(arts);
       game.current = createGame(parent, makeData());
     });
     return () => {
@@ -208,6 +218,7 @@ function Play({ data, reportShot, shotError }: PlayProps) {
     const rest = Object.fromEntries(Object.entries(table.current.arts).filter(([name]) => name !== username));
     const mine = art ? await decodeArts({ [username]: art }) : {};
     table.current = { ...table.current, arts: { ...rest, ...mine } };
+    setArtImages(table.current.arts);
     restart.current();
   };
 
@@ -232,6 +243,9 @@ function Play({ data, reportShot, shotError }: PlayProps) {
           <p className={`shrink-0 font-semibold tabular-nums ${flash ? 'text-coral' : ''}`}>{status}</p>
         </div>
         <div className="flex gap-4 text-sm text-ink-soft">
+          <button type="button" onClick={() => setPanel('community')} className="underline decoration-dotted underline-offset-4">
+            Levels
+          </button>
           {isLoggedIn && (
             <button type="button" onClick={() => setIsDrawing(true)} className="underline decoration-dotted underline-offset-4">
               {myArt ? 'Redraw your ball' : 'Draw your ball'}
@@ -270,7 +284,25 @@ function Play({ data, reportShot, shotError }: PlayProps) {
       {isDrawing && (
         <BallEditor current={myArt} onClose={() => setIsDrawing(false)} onSaved={(art) => void handleArtSaved(art)} />
       )}
-      {sunk && !isPractice && !isDrawing && <ResultCard data={data} sunk={sunk} onPractice={handlePractice} />}
+      {sunk && !isPractice && !isDrawing && !panel && (
+        <ResultCard data={data} sunk={sunk} onPractice={handlePractice} onBuild={() => setPanel('editor')} />
+      )}
+      {panel === 'community' && (
+        <Community
+          arts={artImages}
+          username={username}
+          onBuild={() => setPanel(isLoggedIn ? 'editor' : null)}
+          onClose={() => setPanel(null)}
+        />
+      )}
+      {panel === 'editor' && (
+        <LevelEditor
+          arts={artImages}
+          username={username}
+          onClose={() => setPanel(null)}
+          onShared={() => setPanel('community')}
+        />
+      )}
     </main>
   );
 }

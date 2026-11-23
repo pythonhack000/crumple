@@ -100,6 +100,15 @@ export async function recordShot(round: Round, username: string, shot: ShotReque
   return { mine: await store.getMyRound(round.dayKey, username), counted: true };
 }
 
+async function setLevelMakerFlair(username: string): Promise<void> {
+  try {
+    const subredditName = (await reddit.getCurrentSubreddit()).name;
+    await reddit.setUserFlair({ subredditName, username, text: `${GAME_NAME} level maker` });
+  } catch (error) {
+    console.error(`Could not set level maker flair for ${username}`, error);
+  }
+}
+
 async function resultsComment(round: Round): Promise<string> {
   const [view, top] = await Promise.all([buildRoundView(round), store.getDayLeaders(round.dayKey, RESULTS_TOP)]);
   const podium = top.map((row, index) => `${index + 1}. u/${row.username}: ${row.score}`);
@@ -146,7 +155,9 @@ export async function startDay(now: Date): Promise<Round> {
   }
 
   const dayNumber = await store.nextDayNumber();
-  const level = (await store.takeQueuedLevel()) ?? builtInLevelFor(dayNumber);
+  const community = await store.takeTopCommunityLevel();
+  const level = community ? { ...community.level, author: community.author } : builtInLevelFor(dayNumber);
+  if (community) await setLevelMakerFlair(community.author);
   const byline = level.author ? ` by u/${level.author}` : '';
   const post = await reddit.submitCustomPost({
     title: `${GAME_NAME} #${dayNumber}: ${level.name}${byline}`,

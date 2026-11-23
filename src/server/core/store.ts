@@ -225,18 +225,64 @@ export async function getRank(username: string): Promise<number | null> {
   return rank === undefined ? null : size - rank;
 }
 
-// Player-made levels waiting to become a daily level
+// Player-made levels, voted on by the community
 
-export async function queueLevel(level: Level): Promise<number> {
-  await redis.zAdd(key.levelQueue, { member: JSON.stringify(level), score: Date.now() });
-  return redis.zCard(key.levelQueue);
+const levelKey = {
+  seq: 'cl:seq',
+  board: 'cl:board',
+  level: (id: string) => `cl:${id}`,
+  votes: (id: string) => `cl:votes:${id}`,
+  submittedToday: (day: string) => `cl:daily:${day}`,
+};
+
+export type StoredLevel = { id: string; level: Level; author: string; votes: number };
+
+export async function countSubmissionsToday(dayKey: string, username: string): Promise<number> {
+  return toInt(await redis.hGet(levelKey.submittedToday(dayKey), username));
 }
 
-export async function takeQueuedLevel(): Promise<Level | undefined> {
-  const [first] = await redis.zRange(key.levelQueue, 0, 0, { by: 'rank' });
-  if (!first) return undefined;
-  await redis.zRem(key.levelQueue, [first.member]);
-  return parseLevel(parseJson(first.member));
+export async function addCommunityLevel(dayKey: string, username: string, level: Level): Promise<string> {
+  const id = String(await redis.incrBy(levelKey.seq, 1));
+  await redis.hSet(levelKey.level(id), { level: JSON.stringify(level), author: username, created: String(Date.now()) });
+  await redis.zAdd(levelKey.board, { member: id, score: 0 });
+  await redis.hIncrBy(levelKey.submittedToday(dayKey), username, 1);
+  return id;
+}
+
+async function getCommunityLevel(id: string, votes: number): Promise<StoredLevel | undefined> {
+  const fields = await redis.hGetAll(levelKey.level(id));
+  const level = parseLevel(parseJson(fields.level));
+  return level && fields.author ? { id, level, author: fields.author, votes } : undefined;
+}
+
+/** Pending levels, most upvoted first. */
+export async function listCommunityLevels(count: number): Promise<StoredLevel[]> {
+  const rows = await redis.zRange(levelKey.board, 0, count - 1, { by: 'rank', reverse: true });
+  const levels = await Promise.all(rows.map((row) => getCommunityLevel(row.member, row.score)));
+  return levels.filter((level): level is StoredLevel => level !== undefined);
+}
+
+export async function hasVoted(id: string, username: string): Promise<boolean> {
+  return (await redis.hGet(levelKey.votes(id), username)) !== undefined;
+}
+
+export async function levelAuthor(id: string): Promise<string | undefined> {
+  return (await redis.hGet(levelKey.level(id), 'author')) ?? undefined;
+}
+
+/** Adds one upvote; returns the new total, or undefined if already voted. */
+export async function voteForLevel(id: string, username: string): Promise<number | undefined> {
+  const added = await redis.hSetNX(levelKey.votes(id), username, '1');
+  if (added === 0) return undefined;
+  return redis.zIncrBy(levelKey.board, id, 1);
+}
+
+/** Takes the most upvoted pending level (with at least one vote) off the board. */
+export async function takeTopCommunityLevel(): Promise<StoredLevel | undefined> {
+  const [top] = await redis.zRange(levelKey.board, 0, 0, { by: 'rank', reverse: true });
+  if (!top || top.score < 1) return undefined;
+  await redis.zRem(levelKey.board, [top.member]);
+  return getCommunityLevel(top.member, top.score);
 }
 
 // Player-drawn balls

@@ -82,3 +82,28 @@ export type BallArtResponse = {
   type: 'ball';
   art: string | null;
 };
+
+/** A player-made level waiting for votes. */
+export type CommunityLevel = {
+  id: string;
+  level: Level;
+  author: string;
+  votes: number;
+  /** Whether the viewer already upvoted it. */
+  voted: boolean;
+};
+
+export type LevelsResponse = {
+  type: 'levels';
+  levels: CommunityLevel[];
+};
+
+export type SubmitLevelResponse = {
+  type: 'submitted';
+  id: string;
+};
+
+export type VoteResponse = {
+  type: 'vote';
+  votes: number;
+};

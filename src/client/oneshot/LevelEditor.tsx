@@ -1,0 +1,273 @@
+import { useMemo, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { ErrorResponse, SubmitLevelResponse } from '../../shared/api';
+import type { Level, Point } from '../../shared/level';
+import { LIMITS, WORLD } from '../../shared/level';
+import { PHYSICS } from '../../shared/sim';
+import { LevelSketch, SketchButton } from './Sketchy';
+import { TryLevel } from './TryLevel';
+
+type Tool = 'shelf' | 'bumper' | 'star' | 'fan' | 'vent' | 'ball' | 'bin' | 'erase';
+
+const TOOLS: { id: Tool; label: string }[] = [
+  { id: 'shelf', label: 'Shelf' },
+  { id: 'bumper', label: 'Stress ball' },
+  { id: 'star', label: 'Star' },
+  { id: 'fan', label: 'Fan' },
+  { id: 'vent', label: 'Vents' },
+  { id: 'ball', label: 'Move ball' },
+  { id: 'bin', label: 'Move bin' },
+  { id: 'erase', label: 'Erase' },
+];
+
+const SHELF_THICKNESS = 12;
+const MIN_SHELF = 30;
+const BUMPER_RADIUS = 18;
+const FAN_SIZE = { w: 70, h: 180 };
+const ERASE_REACH = 26;
+
+const START_LEVEL: Level = {
+  name: '',
+  author: null,
+  ball: { x: 60, y: 540 },
+  cup: { x: 290, y: 300 },
+  walls: [
+    { x: 60, y: 560, w: 80, h: SHELF_THICKNESS, angle: 0 },
+    { x: 290, y: 340, w: 90, h: SHELF_THICKNESS, angle: 0 },
+  ],
+  bumpers: [],
+  portals: [],
+  fans: [],
+  stars: [],
+};
+
+const clamp = (value: number, max: number) => Math.min(max, Math.max(0, Math.round(value)));
+const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
+
+/** Removes the piece closest to `at`, if any is within reach. */
+function erase(level: Level, at: Point): Level {
+  const near = (p: Point) => dist(p, at) < ERASE_REACH;
+  const wallIndex = level.walls.findIndex((w) => {
+    const r = (-w.angle * Math.PI) / 180;
+    const dx = at.x - w.x;
+    const dy = at.y - w.y;
+    const lx = dx * Math.cos(r) - dy * Math.sin(r);
+    const ly = dx * Math.sin(r) + dy * Math.cos(r);
+    return Math.abs(lx) <= w.w / 2 + 6 && Math.abs(ly) <= w.h / 2 + 10;
+  });
+  if (level.stars.some(near)) return { ...level, stars: level.stars.filter((s) => !near(s)) };
+  if (level.bumpers.some(near)) return { ...level, bumpers: level.bumpers.filter((b) => !near(b)) };
+  if (level.portals.some((p) => near(p.a) || near(p.b))) {
+    return { ...level, portals: level.portals.filter((p) => !near(p.a) && !near(p.b)) };
+  }
+  if (level.fans.some((f) => Math.abs(f.x - at.x) < f.w / 2 && Math.abs(f.y - at.y) < f.h / 2)) {
+    return { ...level, fans: level.fans.filter((f) => !(Math.abs(f.x - at.x) < f.w / 2 && Math.abs(f.y - at.y) < f.h / 2)) };
+  }
+  if (wallIndex >= 0) return { ...level, walls: level.walls.filter((_, i) => i !== wallIndex) };
+  return level;
+}
+
+type LevelEditorProps = {
+  arts: Record<string, HTMLImageElement>;
+  username: string | undefined;
+  onClose: () => void;
+  onShared: () => void;
+};
+
+export function LevelEditor({ arts, username, onClose, onShared }: LevelEditorProps) {
+  const [history, setHistory] = useState<Level[]>([START_LEVEL]);
+  const level = history[history.length - 1] ?? START_LEVEL;
+  const [name, setName] = useState('');
+  const [tool, setTool] = useState<Tool>('shelf');
+  const [drag, setDrag] = useState<{ from: Point; to: Point } | null>(null);
+  const [pendingVent, setPendingVent] = useState<Point | null>(null);
+  const [isTrying, setIsTrying] = useState(false);
+  const [beaten, setBeaten] = useState<Level | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
+
+  const named = useMemo(() => ({ ...level, name: name.trim() }), [level, name]);
+  const isBeaten = beaten === level;
+
+  const commit = (next: Level) => {
+    if (next === level) return;
+    setHistory((past) => [...past, next].slice(-50));
+    setStatus(null);
+  };
+
+  const toWorld = (event: ReactPointerEvent<SVGSVGElement>): Point => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return {
+      x: clamp(((event.clientX - rect.left) / rect.width) * WORLD.width, WORLD.width),
+      y: clamp(((event.clientY - rect.top) / rect.height) * WORLD.height, WORLD.height),
+    };
+  };
+
+  const full = (what: string, count: number, max: number) => {
+    if (count < max) return false;
+    setStatus(`That’s the most ${what} a level can have.`);
+    return true;
+  };
+
+  const handleTap = (at: Point) => {
+    if (tool === 'bumper' && !full('stress balls', level.bumpers.length, LIMITS.bumpers)) {
+      commit({ ...level, bumpers: [...level.bumpers, { ...at, r: BUMPER_RADIUS }] });
+    } else if (tool === 'star' && !full('stars', level.stars.length, LIMITS.stars)) {
+      commit({ ...level, stars: [...level.stars, at] });
+    } else if (tool === 'vent') {
+      if (!pendingVent) {
+        if (!full('vents', level.portals.length, LIMITS.portals)) setPendingVent(at);
+      } else {
+        commit({ ...level, portals: [...level.portals, { a: pendingVent, b: at }] });
+        setPendingVent(null);
+      }
+    } else if (tool === 'ball') {
+      commit({ ...level, ball: at, walls: level.walls });
+    } else if (tool === 'bin') {
+      commit({ ...level, cup: at });
+    } else if (tool === 'erase') {
+      commit(erase(level, at));
+    }
+  };
+
+  const handleDragEnd = (from: Point, to: Point) => {
+    const length = dist(from, to);
+    if (tool === 'shelf') {
+      if (length < MIN_SHELF) return setStatus('Drag a longer line to draw a shelf.');
+      if (full('shelves', level.walls.length, LIMITS.walls)) return;
+      const angle = Math.round((Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI);
+      const folded = angle > 90 ? angle - 180 : angle < -90 ? angle + 180 : angle;
+      commit({
+        ...level,
+        walls: [...level.walls, { x: Math.round((from.x + to.x) / 2), y: Math.round((from.y + to.y) / 2), w: Math.round(length), h: SHELF_THICKNESS, angle: folded }],
+      });
+    } else if (tool === 'fan') {
+      if (full('fans', level.fans.length, LIMITS.fans)) return;
+      const angle = length < 12 ? -90 : Math.round((Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI);
+      commit({ ...level, fans: [...level.fans, { x: from.x, y: from.y, ...FAN_SIZE, angle }] });
+    } else {
+      handleTap(to);
+    }
+  };
+
+  const share = async () => {
+    if (!named.name) return setStatus('Give your level a name first.');
+    setIsSharing(true);
+    setStatus('Checking it can be beaten…');
+    try {
+      const response = await fetch('/api/levels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(named),
+      });
+      const body = (await response.json().catch(() => undefined)) as SubmitLevelResponse | ErrorResponse | undefined;
+      if (!response.ok || !body || !('type' in body)) {
+        throw new Error(body && 'message' in body ? body.message : 'Could not share your level.');
+      }
+      onShared();
+    } catch (caught) {
+      setStatus(caught instanceof Error ? caught.message : 'Could not share your level.');
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  const preview = drag && (tool === 'shelf' || tool === 'fan') ? drag : null;
+
+  return (
+    <div className="absolute inset-0 z-10 flex flex-col gap-2 bg-felt p-3 text-ink" role="dialog" aria-label="Build a level">
+      <div className="flex items-center gap-2">
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value.slice(0, LIMITS.nameLength))}
+          placeholder="Name your level"
+          aria-label="Level name"
+          className="min-w-0 flex-1 border-b-2 border-dashed border-ink/40 bg-transparent font-display text-2xl outline-none placeholder:text-ink-soft/60"
+        />
+        <button type="button" onClick={onClose} className="text-sm text-ink-soft underline decoration-dotted underline-offset-4">
+          Close
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm" role="radiogroup" aria-label="Tool">
+        {TOOLS.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            role="radio"
+            aria-checked={tool === option.id}
+            onClick={() => {
+              setTool(option.id);
+              setPendingVent(null);
+            }}
+            className={tool === option.id ? 'font-display text-lg text-coral underline underline-offset-4' : 'text-ink-soft'}
+          >
+            {option.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => setHistory((past) => (past.length > 1 ? past.slice(0, -1) : past))}
+          disabled={history.length < 2}
+          className="text-ink-soft disabled:opacity-30"
+        >
+          Undo
+        </button>
+      </div>
+      <div className="relative min-h-0 flex-1">
+        <LevelSketch level={level} className="pointer-events-none absolute inset-0 h-full w-full" />
+        <svg
+          viewBox={`0 0 ${WORLD.width} ${WORLD.height}`}
+          className="relative h-full w-full touch-none"
+          onPointerDown={(event) => {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            const at = toWorld(event);
+            setDrag({ from: at, to: at });
+          }}
+          onPointerMove={(event) => {
+            if (drag) setDrag({ ...drag, to: toWorld(event) });
+          }}
+          onPointerUp={(event) => {
+            if (drag) handleDragEnd(drag.from, toWorld(event));
+            setDrag(null);
+          }}
+        >
+          {Array.from({ length: Math.floor(WORLD.height / 24) }, (_, i) => (
+            <line key={i} x1="0" x2={WORLD.width} y1={48 + i * 24} y2={48 + i * 24} className="stroke-ink/10" />
+          ))}
+          {preview && (
+            <line
+              x1={preview.from.x}
+              y1={preview.from.y}
+              x2={preview.to.x}
+              y2={preview.to.y}
+              className="stroke-coral"
+              strokeWidth="4"
+              strokeDasharray="6 6"
+              strokeLinecap="round"
+            />
+          )}
+          {pendingVent && <circle cx={pendingVent.x} cy={pendingVent.y} r={PHYSICS.portalRadius} className="fill-none stroke-coral" strokeWidth="3" strokeDasharray="4 4" />}
+        </svg>
+      </div>
+      <p className="min-h-5 text-center text-sm text-ink-soft" role="status">
+        {status ?? (pendingVent ? 'Tap where the second vent goes.' : isBeaten ? 'You beat it. Share it with the subreddit.' : 'Beat your own level before you share it.')}
+      </p>
+      <div className="flex justify-center gap-2">
+        <SketchButton onClick={() => setIsTrying(true)}>Try it</SketchButton>
+        <SketchButton tone="ink" disabled={!isBeaten || isSharing} onClick={() => void share()}>
+          {isSharing ? 'Sharing…' : 'Share'}
+        </SketchButton>
+      </div>
+      {isTrying && (
+        <TryLevel
+          level={named.name ? named : { ...named, name: 'Your level' }}
+          title={named.name || 'Your level'}
+          arts={arts}
+          username={username}
+          onSunk={() => setBeaten(level)}
+          onClose={() => setIsTrying(false)}
+        />
+      )}
+    </div>
+  );
+}
