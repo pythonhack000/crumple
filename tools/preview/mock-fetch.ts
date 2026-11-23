@@ -22,8 +22,8 @@ const round = {
   level,
   status: 'open',
   closesAt: new Date(Date.now() + 5 * 3600e3).toISOString(),
-  players: 1284,
-  holesInOne: 37,
+  players: Number(new URLSearchParams(location.search).get('players') ?? '1284'),
+  holesInOne: Number(new URLSearchParams(location.search).get('players') ?? '1284') > 0 ? 37 : 0,
 };
 let mine =
   state === 'sunk' ? { attempts: 3, sunk: { attempt: 3, stars: 2, score: 162, bonus: 32 } } : { attempts: 0, sunk: null as unknown };
