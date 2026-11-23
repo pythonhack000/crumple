@@ -12,7 +12,17 @@ export type SimEvent =
   | { type: 'bump' }
   | { type: 'hit'; speed: number }
   | { type: 'cup' }
-  | { type: 'miss'; reason: 'out' | 'rest' | 'time' };
+  | { type: 'miss'; reason: 'out' | 'rest' | 'time' | 'shatter' };
+
+/** What the ball touched on its way, used to name the shot and credit assists. */
+export type ShotStats = {
+  walls: number;
+  bumpers: number;
+  portals: number;
+  pileBalls: number;
+  /** Owners of other players' missed balls this shot bounced off. */
+  owners: string[];
+};
 
 export type SimStatus = 'aiming' | 'flying' | 'sunk' | 'missed';
 
@@ -100,11 +110,12 @@ export function usableLeftovers<T extends Point>(level: Level, leftovers: readon
     .slice(-PHYSICS.maxLeftovers);
 }
 
-export function createSim(level: Level, leftovers: readonly Point[] = []) {
+export function createSim(level: Level, leftovers: readonly (Point & { owner?: string })[] = []) {
   const engine = Matter.Engine.create({ enableSleeping: false });
+  if (level.twist === 'moon') engine.gravity.y = PHYSICS.moonGravity;
   const ball = tag(
     Matter.Bodies.circle(level.ball.x, level.ball.y, PHYSICS.ballRadius, {
-      restitution: 0.55,
+      restitution: level.twist === 'bouncy' ? PHYSICS.bouncyRestitution : 0.55,
       friction: 0.02,
       frictionAir: 0.004,
       density: 0.002,
@@ -140,14 +151,22 @@ export function createSim(level: Level, leftovers: readonly Point[] = []) {
     tag(Matter.Bodies.rectangle(f.x, f.y, f.w, f.h, { isStatic: true, isSensor: true }), { kind: 'fan', index })
   );
 
-  const leftoverBodies = usableLeftovers(level, leftovers).map((point, index) =>
+  const pile = usableLeftovers(level, leftovers);
+  const leftoverBodies = pile.map((point, index) =>
     tag(
       Matter.Bodies.circle(point.x, point.y, PHYSICS.ballRadius, { isStatic: true, restitution: 0.5, friction: 0.1 }),
       { kind: 'leftover', index }
     )
   );
 
-  Matter.Composite.add(engine.world, [ball, ...leftoverBodies, ...walls, ...bumpers, ...stars, ...portals, ...fans, ...cupBodies(level.cup), ...edgeBodies()]);
+  const cup = cupBodies(level.cup);
+  const cupStart = cup.map((body) => ({ x: body.position.x, y: body.position.y }));
+  Matter.Composite.add(engine.world, [ball, ...leftoverBodies, ...walls, ...bumpers, ...stars, ...portals, ...fans, ...cup, ...edgeBodies()]);
+
+  const stats = { walls: 0, bumpers: 0, portals: 0, pileBalls: 0, owners: new Set<string>() };
+  /** Horizontal offset of a moving bin after `n` steps of flight. */
+  const binOffset = (n: number) =>
+    level.twist === 'moving-bin' ? PHYSICS.binSwing * Math.sin((2 * Math.PI * n) / PHYSICS.binPeriodSteps) : 0;
 
   let status: SimStatus = 'aiming';
   let steps = 0;
@@ -177,12 +196,24 @@ export function createSim(level: Level, leftovers: readonly Point[] = []) {
         if (exit) {
           Matter.Body.setPosition(ball, exit);
           portalCooldown = PHYSICS.portalCooldown;
+          stats.portals += 1;
           pending.push({ type: 'portal' });
         }
-      } else if (info.kind === 'bumper') {
-        pending.push({ type: 'bump' });
-      } else if (info.kind === 'wall' || info.kind === 'leftover' || info.kind === 'cup' || info.kind === 'edge') {
-        pending.push({ type: 'hit', speed: Matter.Vector.magnitude(ball.velocity) });
+      } else if (info.kind === 'bumper' || info.kind === 'wall' || info.kind === 'leftover' || info.kind === 'cup' || info.kind === 'edge') {
+        const speed = Matter.Vector.magnitude(ball.velocity);
+        if (info.kind === 'bumper') stats.bumpers += 1;
+        if (info.kind === 'wall') stats.walls += 1;
+        if (info.kind === 'leftover') {
+          stats.pileBalls += 1;
+          const owner = pile[info.index]?.owner;
+          if (owner) stats.owners.add(owner);
+        }
+        if (level.twist === 'glass' && speed > PHYSICS.glassBreakSpeed) {
+          status = 'missed';
+          pending.push({ type: 'miss', reason: 'shatter' });
+          continue;
+        }
+        pending.push(info.kind === 'bumper' ? { type: 'bump' } : { type: 'hit', speed });
       }
     }
   });
@@ -212,6 +243,9 @@ export function createSim(level: Level, leftovers: readonly Point[] = []) {
       return collected.size;
     },
     collectedStars: () => new Set(collected),
+    stats: (): ShotStats => ({ ...stats, owners: [...stats.owners] }),
+    /** Where the bin is now (it moves on moving-bin days). */
+    cupPosition: (): Point => ({ x: level.cup.x + binOffset(steps), y: level.cup.y }),
     path: () => [...path],
     /** Where a missed ball came to rest, or null if it left the table. */
     restPoint(): Point | null {
@@ -239,6 +273,13 @@ export function createSim(level: Level, leftovers: readonly Point[] = []) {
           y: ball.velocity.y + Math.sin(radians) * PHYSICS.fanAccel,
         });
       }
+      if (level.twist === 'moving-bin') {
+        const dx = binOffset(steps + 1);
+        cup.forEach((body, i) => {
+          const start = cupStart[i];
+          if (start) Matter.Body.setPosition(body, { x: start.x + dx, y: start.y });
+        });
+      }
       Matter.Engine.update(engine, PHYSICS.stepMs);
       steps += 1;
       if (portalCooldown > 0) portalCooldown -= 1;
@@ -248,8 +289,8 @@ export function createSim(level: Level, leftovers: readonly Point[] = []) {
 
       const events = pending;
       pending = [];
-      // The collision handler may have sunk the ball during this update.
-      if (currentStatus() === 'sunk') return events;
+      // The collision handler may have sunk or shattered the ball during this update.
+      if (currentStatus() === 'sunk' || currentStatus() === 'missed') return events;
       if (ball.position.y > WORLD.height + 40) return [...events, ...finishMiss('out')];
       const speed = Matter.Vector.magnitude(ball.velocity);
       restSteps = speed < PHYSICS.restSpeed && activeFans.size === 0 ? restSteps + 1 : 0;

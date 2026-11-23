@@ -18,6 +18,12 @@ export const PHYSICS = {
   pathEvery: 3,
   pathMax: 240,
   portalCooldown: 20,
+  /** Twist tuning. */
+  moonGravity: 0.45,
+  bouncyRestitution: 0.92,
+  glassBreakSpeed: 9,
+  binSwing: 70,
+  binPeriodSteps: 220,
   /** Missed balls from everyone kept on the shared table. */
   maxLeftovers: 80,
 } as const;

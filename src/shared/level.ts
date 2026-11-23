@@ -17,11 +17,16 @@ export type Portal = { a: Point; b: Point };
 /** A zone that pushes the ball toward `angle` (degrees, 0 = right, -90 = up). */
 export type Fan = { x: number; y: number; w: number; h: number; angle: number };
 
+/** A weekly surprise rule. It changes the physics for everyone that day. */
+export const TWISTS = ['moon', 'bouncy', 'glass', 'moving-bin'] as const;
+export type Twist = (typeof TWISTS)[number];
+
 export type Level = {
   name: string;
   author: string | null;
   /** For remixes: the username of the original level's maker. */
   basedOn?: string;
+  twist?: Twist;
   ball: Point;
   cup: Point;
   walls: Wall[];
@@ -93,7 +98,8 @@ export function parseLevel(value: unknown): Level | undefined {
   const stars = list(value.stars, LIMITS.stars, point);
   if (!name || !ball || !cup || !walls || !bumpers || !portals || !fans || !stars) return undefined;
   const basedOn = typeof value.basedOn === 'string' && USERNAME.test(value.basedOn) ? value.basedOn : undefined;
-  return { name, author, ...(basedOn ? { basedOn } : {}), ball, cup, walls, bumpers, portals, fans, stars };
+  const twist = TWISTS.find((option) => option === value.twist);
+  return { name, author, ...(basedOn ? { basedOn } : {}), ...(twist ? { twist } : {}), ball, cup, walls, bumpers, portals, fans, stars };
 }
 
 export const SCORE = {
