@@ -3,7 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { BallArtResponse, ErrorResponse } from '../../shared/api';
 import { MATERIALS } from '../../shared/ball-art';
 import type { Material } from '../../shared/ball-art';
-import { drawMaterialBase, drawOutline, exportBall } from './ballArt';
+import { drawMaterialBase, drawOutline, exportBall, shapePath } from './ballArt';
 import { SketchButton } from './Sketchy';
 import { MATERIAL_LABELS } from './theme';
 
@@ -148,6 +148,7 @@ export function BallEditor({ current, material: startMaterial, onClose, onSaved 
     if (!g) return;
     g.clearRect(0, 0, CANVAS, CANVAS);
     drawMaterialBase(g, material, CANVAS / 2);
+    drawOutline(g, CANVAS / 2, 3, material);
   }, [material]);
 
   useEffect(() => {
@@ -169,8 +170,7 @@ export function BallEditor({ current, material: startMaterial, onClose, onSaved 
     if (!g) return;
     const from = last.current ?? to;
     g.save();
-    g.beginPath();
-    g.arc(CANVAS / 2, CANVAS / 2, CANVAS / 2, 0, Math.PI * 2);
+    shapePath(g, material, CANVAS / 2, 3);
     g.clip();
     g.globalCompositeOperation = tool.erase ? 'destination-out' : 'source-over';
     g.globalAlpha = tool.alpha;
@@ -242,12 +242,12 @@ export function BallEditor({ current, material: startMaterial, onClose, onSaved 
       </div>
 
       <div className="relative h-60 w-60 shrink-0">
-        <canvas ref={base} width={CANVAS} height={CANVAS} className="absolute inset-0 h-full w-full rounded-full" />
+        <canvas ref={base} width={CANVAS} height={CANVAS} className="absolute inset-0 h-full w-full" />
         <canvas
           ref={strokes}
           width={CANVAS}
           height={CANVAS}
-          className="absolute inset-0 h-full w-full touch-none rounded-full"
+          className="absolute inset-0 h-full w-full touch-none"
           aria-label="Your ball. Draw on it."
           onPointerDown={handleDown}
           onPointerMove={(event) => {
@@ -257,9 +257,6 @@ export function BallEditor({ current, material: startMaterial, onClose, onSaved 
             last.current = null;
           }}
         />
-        <svg viewBox="0 0 240 240" className="pointer-events-none absolute -inset-1 h-[calc(100%+0.5rem)] w-[calc(100%+0.5rem)]" aria-hidden="true">
-          <path d="M120 6 C 185 4, 236 52, 234 120 C 233 188, 186 236, 118 234 C 52 233, 5 186, 6 119 C 7 55, 56 7, 124 5" fill="none" stroke="#22408f" strokeWidth="3" strokeLinecap="round" />
-        </svg>
       </div>
 
       <div className="flex gap-3" role="radiogroup" aria-label="What it’s made of">
@@ -334,7 +331,7 @@ function MaterialChoice({ material, isSelected, onPick }: { material: Material; 
     const g = preview.current?.getContext('2d');
     if (!g) return;
     drawMaterialBase(g, material, 24);
-    drawOutline(g, 24, 2.5);
+    drawOutline(g, 24, 2.5, material);
   }, [material]);
   return (
     <button type="button" role="radio" aria-checked={isSelected} onClick={onPick} className="relative flex flex-col items-center font-display text-base">

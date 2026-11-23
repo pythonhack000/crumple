@@ -3,11 +3,32 @@ import { BALL_ART } from '../../shared/ball-art';
 
 const INK = '#22408f';
 
+// Fixed jitter so every crumpled paper ball and dented can has the same outline everywhere.
+const PAPER_RADII = [1, 0.9, 0.96, 0.84, 0.99, 0.93, 0.86, 1, 0.88, 0.97, 0.83, 0.95, 0.91, 0.99, 0.85, 0.94, 0.89];
+const TIN_RADII = [1, 0.95, 1, 0.9, 0.99, 1, 0.93, 1, 0.96, 0.91, 1, 0.97];
+
+/** The ball's silhouette: crumpled paper, a dented can, or a round ball. */
+export function shapePath(g: CanvasRenderingContext2D, material: Material, r: number, inset = 0) {
+  g.beginPath();
+  if (material === 'paper' || material === 'tin') {
+    const radii = material === 'paper' ? PAPER_RADII : TIN_RADII;
+    radii.forEach((k, i) => {
+      const a = (i / radii.length) * Math.PI * 2 - Math.PI / 2;
+      const x = r + Math.cos(a) * (r * k - inset);
+      const y = r + Math.sin(a) * (r * k - inset);
+      if (i === 0) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    });
+    g.closePath();
+  } else {
+    g.arc(r, r, r - inset, 0, Math.PI * 2);
+  }
+}
+
 /** Paints a material's look into a circle of radius r at (r, r), in the notebook style. */
 export function drawMaterialBase(g: CanvasRenderingContext2D, material: Material, r: number) {
   g.save();
-  g.beginPath();
-  g.arc(r, r, r, 0, Math.PI * 2);
+  shapePath(g, material, r);
   g.clip();
   const line = (x1: number, y1: number, x2: number, y2: number, color: string, width: number) => {
     g.strokeStyle = color;
@@ -82,12 +103,12 @@ export function drawMaterialBase(g: CanvasRenderingContext2D, material: Material
   g.restore();
 }
 
-/** A hand-drawn ink circle around the ball. */
-export function drawOutline(g: CanvasRenderingContext2D, r: number, width: number) {
+/** A pen outline following the ball's silhouette. */
+export function drawOutline(g: CanvasRenderingContext2D, r: number, width: number, material: Material = 'rubber') {
   g.strokeStyle = INK;
   g.lineWidth = width;
-  g.beginPath();
-  g.arc(r, r, r - width / 2, 0, Math.PI * 2);
+  g.lineJoin = 'round';
+  shapePath(g, material, r, width / 2);
   g.stroke();
 }
 
@@ -101,11 +122,10 @@ export function exportBall(strokes: HTMLCanvasElement, material: Material): stri
   if (!g) return '';
   drawMaterialBase(g, material, size / 2);
   g.save();
-  g.beginPath();
-  g.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+  shapePath(g, material, size / 2);
   g.clip();
   g.drawImage(strokes, 0, 0, size, size);
   g.restore();
-  drawOutline(g, size / 2, size * 0.05);
+  drawOutline(g, size / 2, size * 0.05, material);
   return out.toDataURL('image/png');
 }

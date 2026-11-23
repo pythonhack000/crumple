@@ -91,16 +91,7 @@ export class PlayScene extends Phaser.Scene {
     this.trail = this.add.graphics();
     this.aim = this.add.graphics();
     const { ball } = this.setup.level;
-    const myArt = this.artKey(this.setup.username);
-    if (myArt) {
-      this.ball = this.add.image(ball.x, ball.y, myArt).setDisplaySize((PHYSICS.ballRadius + 3) * 2, (PHYSICS.ballRadius + 3) * 2);
-    } else {
-      const plain = this.add.graphics({ x: ball.x, y: ball.y });
-      const material = this.setup.material;
-      if (material === 'paper') paperBall(plain, PHYSICS.ballRadius + 2, seeded(7), COLORS.coral, COLORS.ink);
-      else materialBall(plain, PHYSICS.ballRadius + 2, material, COLORS.ink);
-      this.ball = plain;
-    }
+    this.ball = this.makeBall(ball.x, ball.y);
     this.ballScale = this.ball.scale;
     this.tweens.add({ targets: this.ball, scale: this.ballScale * 1.1, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
@@ -136,6 +127,19 @@ export class PlayScene extends Phaser.Scene {
         ease: 'Quad.easeOut',
       });
     });
+  }
+
+  /** The viewer's ball: their drawing if they made one, else their material's look. */
+  private makeBall(x: number, y: number): Phaser.GameObjects.Graphics | Phaser.GameObjects.Image {
+    const art = this.artKey(this.setup.username);
+    if (art) {
+      return this.add.image(x, y, art).setDisplaySize((PHYSICS.ballRadius + 3) * 2, (PHYSICS.ballRadius + 3) * 2);
+    }
+    const plain = this.add.graphics({ x, y });
+    const { material } = this.setup;
+    if (material === 'paper') paperBall(plain, PHYSICS.ballRadius + 2, seeded(7), COLORS.coral, COLORS.ink);
+    else materialBall(plain, PHYSICS.ballRadius + 2, material, COLORS.ink);
+    return plain;
   }
 
   /** Texture key for a player's drawn ball, registering it on first use. */
@@ -447,8 +451,8 @@ export class PlayScene extends Phaser.Scene {
       .text(WORLD.width / 2, 34, 'Replay', { fontFamily: 'Kalam, cursive', fontSize: '22px', color: '#f2553a' })
       .setOrigin(0.5)
       .setScrollFactor(0);
-    const marker = this.add.graphics();
-    paperBall(marker, PHYSICS.ballRadius + 2, seeded(7), COLORS.coral, COLORS.ink);
+    const start = path[0] ?? { x: 0, y: 0 };
+    const marker = this.makeBall(start.x, start.y);
     const duration = Math.min(REPLAY_MAX_MS, (path.length * PHYSICS.pathEvery * PHYSICS.stepMs) / REPLAY_SPEED);
     camera.zoomTo(1.25, 300);
     let isDone = false;
