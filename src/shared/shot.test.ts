@@ -15,7 +15,17 @@ test('parseShot accepts a sinking shot and rounds its path', () => {
       { x: 10, y: 21 },
       { x: 30, y: 40 },
     ],
+    rest: null,
   });
+});
+
+test('parseShot keeps where a missed ball stopped', () => {
+  assert.deepEqual(parseShot({ sunk: false, stars: 0, path, rest: { x: 300.6, y: 450 } }, 3)?.rest, { x: 301, y: 450 });
+});
+
+test('parseShot drops a rest point outside the table', () => {
+  assert.equal(parseShot({ sunk: false, stars: 0, path, rest: { x: 300, y: 9999 } }, 3)?.rest, null);
+  assert.equal(parseShot({ sunk: false, stars: 0, path, rest: 'here' }, 3)?.rest, null);
 });
 
 test('parseShot zeroes stars on a miss', () => {

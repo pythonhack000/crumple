@@ -51,3 +51,16 @@ test('shotScore loses points per extra attempt but never below the floor', () =>
   assert.equal(shotScore(3, 0), SCORE.cup - 2 * SCORE.attemptPenalty);
   assert.equal(shotScore(50, 0), SCORE.minCupScore);
 });
+
+test('usableLeftovers drops balls on the tee, in the cup or off the table', async () => {
+  const { usableLeftovers } = await import('./sim.ts');
+  const level = parseLevel(valid);
+  assert.ok(level);
+  const kept = usableLeftovers(level, [
+    { x: 40, y: 500 },
+    { x: 300, y: 200 },
+    { x: 400, y: 10 },
+    { x: 150, y: 400 },
+  ]);
+  assert.deepEqual(kept, [{ x: 150, y: 400 }]);
+});
