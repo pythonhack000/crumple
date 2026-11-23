@@ -5,6 +5,7 @@ import { WORLD } from '../../shared/level';
 import { createSim, gravityPerStep, launchVelocity, PHYSICS, previewArc, usableLeftovers } from '../../shared/sim';
 import type { Sim, SimEvent } from '../../shared/sim';
 import { paperBall, penBlock, penCircle, penLine, penStar, rectCorners, seeded } from './sketch';
+import { sfx, unlock } from './audio';
 import { COLORS } from './theme';
 
 export type ShotResult = { sunk: boolean; stars: number; path: Point[]; rest: Point | null };
@@ -71,6 +72,7 @@ export class PlayScene extends Phaser.Scene {
     this.tweens.add({ targets: this.ball, scale: 1.1, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      unlock();
       if (this.sim.status !== 'aiming') return;
       this.dragStart = { x: pointer.worldX, y: pointer.worldY };
       this.dragNow = this.dragStart;
@@ -234,6 +236,7 @@ export class PlayScene extends Phaser.Scene {
     this.tweens.killTweensOf(this.ball);
     this.ball.setScale(1);
     this.sim.launch(drag);
+    sfx.launch();
     this.setup.onLaunch();
   }
 
@@ -292,22 +295,26 @@ export class PlayScene extends Phaser.Scene {
           this.tweens.add({ targets: star, scale: 1.9, alpha: 0, duration: 260, ease: 'Back.easeOut' });
         }
         this.burst(x, y, 'dot', COLORS.coral, 12);
+        sfx.star();
         break;
       }
       case 'bump': {
         const bumper = this.bumpers.find((b) => Phaser.Math.Distance.Between(b.x, b.y, x, y) < 60);
         if (bumper) this.tweens.add({ targets: bumper, scale: 1.25, duration: 90, yoyo: true });
         this.cameras.main.shake(90, 0.006);
+        sfx.bump();
         break;
       }
       case 'portal':
         this.cameras.main.flash(120, 34, 64, 143);
         this.trailPoints = [];
+        sfx.portal();
         break;
       case 'hit':
         if (event.speed > 3) {
           this.tweens.add({ targets: this.ball, scaleX: 1.25, scaleY: 0.8, duration: 60, yoyo: true });
         }
+        if (event.speed > 1) sfx.hit(event.speed);
         break;
       case 'cup': {
         const { cup } = this.setup.level;
@@ -315,11 +322,13 @@ export class PlayScene extends Phaser.Scene {
         this.burst(cup.x, cup.y - 12, 'dot', COLORS.coral, 16, 260);
         this.cameras.main.shake(160, 0.008);
         this.tweens.add({ targets: this.ball, scale: 0.6, alpha: 0, duration: 350, ease: 'Quad.easeIn' });
+        sfx.cup();
         this.finish(true);
         break;
       }
       case 'miss':
         this.tweens.add({ targets: this.ball, alpha: 0.3, duration: 300 });
+        sfx.miss();
         this.finish(false);
         break;
     }

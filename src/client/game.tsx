@@ -9,6 +9,7 @@ import type { Level } from '../shared/level';
 import { PHYSICS } from '../shared/sim';
 import { createGame } from './oneshot/scene';
 import type { SceneData, ShotResult } from './oneshot/scene';
+import { isMuted, setMuted } from './oneshot/audio';
 import { useRound } from './oneshot/useRound';
 
 const MISS_RESTART_MS = 450;
@@ -97,6 +98,11 @@ function Play({ data, reportShot, shotError }: PlayProps) {
   const [hasLaunched, setHasLaunched] = useState((data.mine?.attempts ?? 0) > 0);
   const [isPractice, setIsPractice] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  const [muted, setMutedState] = useState(isMuted());
+  const toggleSound = () => {
+    setMuted(!muted);
+    setMutedState(!muted);
+  };
   const level: Level = data.round.level;
   const sunk = data.mine?.sunk ?? null;
   const isLoggedIn = data.me !== null;
@@ -174,7 +180,17 @@ function Play({ data, reportShot, shotError }: PlayProps) {
         <h1 className="truncate font-display text-xl font-bold">
           #{data.round.dayNumber} <span className="font-normal text-ink-soft">{level.name}</span>
         </h1>
-        <p className={`shrink-0 font-semibold tabular-nums ${flash ? 'text-coral' : ''}`}>{status}</p>
+        <div className="flex shrink-0 items-baseline gap-3">
+          <p className={`font-semibold tabular-nums ${flash ? 'text-coral' : ''}`}>{status}</p>
+          <button
+            type="button"
+            onClick={toggleSound}
+            aria-pressed={!muted}
+            className="text-sm text-ink-soft underline decoration-dotted underline-offset-4"
+          >
+            {muted ? 'Sound off' : 'Sound on'}
+          </button>
+        </div>
       </header>
       {!isLoggedIn && (
         <button
