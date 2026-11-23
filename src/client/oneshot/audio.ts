@@ -1,28 +1,34 @@
 // All sound is synthesised with Web Audio: no audio files, no licensing.
-// Browsers only allow sound after a user gesture, so nothing plays until the
-// first touch; `unlock()` is called from the first pointer press.
+// The music is part of the game: every bounce plays a note from the chord
+// that is sounding right now, so a throw writes its own little tune.
+// Browsers only allow sound after a user gesture, so `unlock()` is called
+// from the first pointer press.
 
 const MUTE_KEY = 'crumple-muted';
-const MASTER_GAIN = 0.55;
-const MUSIC_GAIN = 0.11;
-const BPM = 78;
+const MASTER_GAIN = 0.6;
+const MUSIC_GAIN = 0.16;
+const BPM = 86;
+const LOOKAHEAD_S = 0.6;
+const FILTER_CLOSED = 900;
+const FILTER_OPEN = 9000;
 
-type Chord = number[];
-// Fmaj7, Em7, Dm7, Cmaj7: soft, a little wistful, very office-at-4pm.
+type Chord = { root: number; tones: number[] };
+// Fmaj9, Em7, Dm9, Cmaj7: warm, a bit wistful, very office-at-4pm.
 const PROGRESSION: Chord[] = [
-  [53, 57, 60, 64],
-  [52, 55, 59, 62],
-  [50, 53, 57, 60],
-  [48, 52, 55, 59],
+  { root: 41, tones: [57, 60, 64, 67] },
+  { root: 40, tones: [55, 59, 62, 67] },
+  { root: 38, tones: [57, 60, 64, 65] },
+  { root: 36, tones: [55, 59, 62, 64] },
 ];
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 let musicBus: GainNode | null = null;
+let musicFilter: BiquadFilterNode | null = null;
 let noise: AudioBuffer | null = null;
 let musicTimer: number | null = null;
-let nextBar = 0;
-let bar = 0;
+let nextStep = 0;
+let step = 0;
 let muted = readMuted();
 
 function readMuted(): boolean {
@@ -34,6 +40,7 @@ function readMuted(): boolean {
 }
 
 const midiToHz = (note: number) => 440 * 2 ** ((note - 69) / 12);
+const stepLength = () => 60 / BPM / 4;
 
 function setup(): AudioContext | null {
   if (ctx) return ctx;
@@ -46,9 +53,13 @@ function setup(): AudioContext | null {
   master = ctx.createGain();
   master.gain.value = muted ? 0 : MASTER_GAIN;
   master.connect(ctx.destination);
+  musicFilter = ctx.createBiquadFilter();
+  musicFilter.type = 'lowpass';
+  musicFilter.frequency.value = FILTER_OPEN * 0.5;
+  musicFilter.connect(master);
   musicBus = ctx.createGain();
   musicBus.gain.value = MUSIC_GAIN;
-  musicBus.connect(master);
+  musicBus.connect(musicFilter);
   noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
   const data = noise.getChannelData(0);
   for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
@@ -61,8 +72,8 @@ export function unlock() {
   if (!audio) return;
   if (audio.state === 'suspended') void audio.resume();
   if (musicTimer === null) {
-    nextBar = audio.currentTime + 0.1;
-    musicTimer = window.setInterval(scheduleMusic, 250);
+    nextStep = audio.currentTime + 0.1;
+    musicTimer = window.setInterval(scheduleMusic, 200);
   }
 }
 
@@ -88,21 +99,21 @@ function tone(freq: number, start: number, duration: number, type: OscillatorTyp
   osc.frequency.setValueAtTime(freq, start);
   if (endFreq) osc.frequency.exponentialRampToValueAtTime(endFreq, start + duration);
   gain.gain.setValueAtTime(0.0001, start);
-  gain.gain.exponentialRampToValueAtTime(peak, start + Math.min(0.02, duration / 4));
+  gain.gain.exponentialRampToValueAtTime(peak, start + Math.min(0.012, duration / 4));
   gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
   osc.connect(gain).connect(bus);
   osc.start(start);
   osc.stop(start + duration + 0.05);
 }
 
-function hiss(start: number, duration: number, peak: number, filterFreq: number, bus: AudioNode, type: BiquadFilterType = 'bandpass') {
+function hiss(start: number, duration: number, peak: number, filterFreq: number, bus: AudioNode, type: BiquadFilterType = 'bandpass', q = 0.9) {
   if (!ctx || !noise) return;
   const source = ctx.createBufferSource();
   source.buffer = noise;
   const filter = ctx.createBiquadFilter();
   filter.type = type;
   filter.frequency.value = filterFreq;
-  filter.Q.value = 0.9;
+  filter.Q.value = q;
   const gain = ctx.createGain();
   gain.gain.setValueAtTime(peak, start);
   gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
@@ -110,18 +121,48 @@ function hiss(start: number, duration: number, peak: number, filterFreq: number,
   source.start(start, Math.random() * 0.5, duration + 0.05);
 }
 
+/** A plucked note: quick attack, soft decay, a touch of octave shimmer. */
+function pluck(note: number, start: number, peak: number, bus: AudioNode, length = 0.5) {
+  tone(midiToHz(note), start, length, 'triangle', peak, bus);
+  tone(midiToHz(note + 12), start, length * 0.5, 'sine', peak * 0.35, bus);
+}
+
+const currentChord = (): Chord => PROGRESSION[Math.floor(step / 16) % PROGRESSION.length] ?? PROGRESSION[0]!;
+
+// Paper percussion: a palm on the desk, a crumpled sheet, a pencil tick.
+function deskThump(t: number, bus: AudioNode) {
+  tone(120, t, 0.22, 'sine', 0.9, bus, 45);
+  hiss(t, 0.05, 0.25, 300, bus, 'lowpass');
+}
+function paperSnare(t: number, bus: AudioNode) {
+  hiss(t, 0.16, 0.55, 2400, bus, 'bandpass', 0.6);
+  hiss(t + 0.02, 0.08, 0.3, 5200, bus, 'bandpass', 1.2);
+}
+function pencilTick(t: number, bus: AudioNode, accent: boolean) {
+  hiss(t, 0.025, accent ? 0.3 : 0.16, 7500, bus, 'highpass');
+}
+
 function scheduleMusic() {
   if (!ctx || !musicBus) return;
-  const barLength = (60 / BPM) * 4;
-  while (nextBar < ctx.currentTime + 1) {
-    const chord = PROGRESSION[bar % PROGRESSION.length] ?? [];
-    for (const note of chord) tone(midiToHz(note), nextBar, barLength * 0.95, 'triangle', 0.18, musicBus);
-    tone(midiToHz((chord[0] ?? 48) - 12), nextBar, barLength * 0.5, 'sine', 0.35, musicBus);
-    for (let beat = 0; beat < 8; beat += 1) {
-      hiss(nextBar + (beat * barLength) / 8, 0.05, beat % 2 === 0 ? 0.12 : 0.06, 8000, musicBus, 'highpass');
+  while (nextStep < ctx.currentTime + LOOKAHEAD_S) {
+    const t = nextStep;
+    const inBar = step % 16;
+    const chord = currentChord();
+    if (inBar === 0) {
+      for (const note of chord.tones) tone(midiToHz(note), t, stepLength() * 15, 'triangle', 0.09, musicBus);
+      tone(midiToHz(chord.root), t, stepLength() * 7, 'sine', 0.5, musicBus);
     }
-    nextBar += barLength;
-    bar += 1;
+    if (inBar === 8) tone(midiToHz(chord.root + 7), t, stepLength() * 6, 'sine', 0.35, musicBus);
+    if (inBar === 0 || inBar === 7 || inBar === 10) deskThump(t, musicBus);
+    if (inBar === 4 || inBar === 12) paperSnare(t, musicBus);
+    if (inBar % 2 === 0) pencilTick(t, musicBus, inBar % 4 === 2);
+    // A sparse melody that wanders over the chord, so the loop never feels stuck.
+    if ((inBar === 3 || inBar === 11 || inBar === 14) && Math.random() < 0.55) {
+      const tones = chord.tones;
+      pluck((tones[Math.floor(Math.random() * tones.length)] ?? 60) + 12, t, 0.07, musicBus, 0.6);
+    }
+    nextStep += stepLength();
+    step += 1;
   }
 }
 
@@ -130,31 +171,55 @@ function now(): number | null {
   return ctx.currentTime;
 }
 
-/** Sound effects, one per thing that can happen to the ball. */
+/** Picks a note of the current chord: higher on the page, higher in pitch. */
+function noteForHeight(y: number, worldHeight: number): number {
+  const tones = currentChord().tones;
+  const ladder = [...tones, ...tones.map((n) => n + 12)];
+  const t = 1 - Math.min(1, Math.max(0, y / worldHeight));
+  return ladder[Math.min(ladder.length - 1, Math.floor(t * ladder.length))] ?? 60;
+}
+
+/** While aiming, the music opens up with the power of the pull. */
+export function setAimPower(power: number) {
+  if (!ctx || !musicFilter) return;
+  const target = FILTER_CLOSED + (FILTER_OPEN - FILTER_CLOSED) * Math.min(1, Math.max(0, power));
+  musicFilter.frequency.setTargetAtTime(target, ctx.currentTime, 0.08);
+}
+
+/** Muffles the music, like holding your breath, for the slow-motion moment. */
+export function setHoldBreath(isHeld: boolean) {
+  if (!ctx || !musicFilter || !musicBus) return;
+  musicFilter.frequency.setTargetAtTime(isHeld ? 500 : FILTER_OPEN * 0.5, ctx.currentTime, isHeld ? 0.05 : 0.3);
+  musicBus.gain.setTargetAtTime(isHeld ? MUSIC_GAIN * 0.5 : MUSIC_GAIN, ctx.currentTime, 0.1);
+}
+
+/** Sound effects; the musical ones follow the chord that is playing. */
 export const sfx = {
   launch() {
     const t = now();
     if (t === null || !master) return;
     hiss(t, 0.18, 0.5, 2500, master);
     hiss(t + 0.05, 0.12, 0.3, 4200, master);
+    setAimPower(0.5);
   },
-  hit(speed: number) {
+  hit(speed: number, y: number, worldHeight: number) {
     const t = now();
     if (t === null || !master) return;
     const loudness = Math.min(1, speed / 12);
-    tone(220 + speed * 10, t, 0.06, 'square', 0.08 * loudness + 0.02, master);
-    hiss(t, 0.04, 0.25 * loudness, 1800, master);
+    pluck(noteForHeight(y, worldHeight), t, 0.08 + 0.18 * loudness, master, 0.45);
+    hiss(t, 0.03, 0.15 * loudness, 1800, master);
   },
-  bump() {
+  bump(y: number, worldHeight: number) {
     const t = now();
     if (t === null || !master) return;
-    tone(520, t, 0.22, 'sine', 0.35, master, 180);
+    const note = noteForHeight(y, worldHeight) + 12;
+    pluck(note, t, 0.22, master, 0.5);
+    tone(520, t, 0.18, 'sine', 0.18, master, 200);
   },
   star() {
     const t = now();
     if (t === null || !master) return;
-    tone(1318, t, 0.25, 'sine', 0.22, master);
-    tone(1976, t + 0.06, 0.3, 'sine', 0.16, master);
+    currentChord().tones.forEach((note, i) => pluck(note + 12, t + i * 0.045, 0.12, master as GainNode, 0.5));
   },
   portal() {
     const t = now();
@@ -167,11 +232,14 @@ export const sfx = {
     if (t === null || !master) return;
     tone(110, t, 0.3, 'sine', 0.6, master, 60);
     hiss(t, 0.12, 0.4, 900, master);
-    [523, 659, 784].forEach((freq, i) => tone(freq, t + 0.18 + i * 0.08, 0.35, 'triangle', 0.18, master as GainNode));
+    const chord = currentChord();
+    chord.tones.forEach((note, i) => pluck(note + 12, t + 0.12 + i * 0.07, 0.16, master as GainNode, 0.9));
+    pluck(chord.root + 24, t + 0.45, 0.18, master, 1.2);
   },
   miss() {
     const t = now();
     if (t === null || !master) return;
-    tone(330, t, 0.45, 'triangle', 0.14, master, 165);
+    tone(330, t, 0.45, 'triangle', 0.12, master, 165);
+    setAimPower(0.5);
   },
 };

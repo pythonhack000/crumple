@@ -5,7 +5,7 @@ import { WORLD } from '../../shared/level';
 import { createSim, gravityPerStep, launchVelocity, PHYSICS, previewArc, usableLeftovers } from '../../shared/sim';
 import type { Sim, SimEvent } from '../../shared/sim';
 import { paperBall, penBlock, penCircle, penLine, penStar, rectCorners, seeded } from './sketch';
-import { sfx, unlock } from './audio';
+import { setAimPower, sfx, unlock } from './audio';
 import { COLORS } from './theme';
 
 export type ShotResult = { sunk: boolean; stars: number; path: Point[]; rest: Point | null };
@@ -299,6 +299,7 @@ export class PlayScene extends Phaser.Scene {
     const length = Math.hypot(drag.x, drag.y);
     if (length < MIN_DRAG) return;
     const power = Math.min(length, PHYSICS.fullPowerDrag) / PHYSICS.fullPowerDrag;
+    setAimPower(power);
     const from = { x: this.ball.x, y: this.ball.y };
 
     // Rubber band toward the pull, power arc around the ball.
@@ -354,7 +355,7 @@ export class PlayScene extends Phaser.Scene {
         const bumper = this.bumpers.find((b) => Phaser.Math.Distance.Between(b.x, b.y, x, y) < 60);
         if (bumper) this.tweens.add({ targets: bumper, scale: 1.25, duration: 90, yoyo: true });
         this.cameras.main.shake(90, 0.006);
-        sfx.bump();
+        sfx.bump(this.ball.y, WORLD.height);
         break;
       }
       case 'portal':
@@ -366,7 +367,7 @@ export class PlayScene extends Phaser.Scene {
         if (event.speed > 3) {
           this.tweens.add({ targets: this.ball, scaleX: this.ballScale * 1.25, scaleY: this.ballScale * 0.8, duration: 60, yoyo: true });
         }
-        if (event.speed > 1) sfx.hit(event.speed);
+        if (event.speed > 1) sfx.hit(event.speed, this.ball.y, WORLD.height);
         break;
       case 'cup': {
         const { cup } = this.setup.level;
