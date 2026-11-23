@@ -108,12 +108,12 @@ export async function markClosed(dayKey: string): Promise<void> {
 
 // Shots
 
-type SinkRecord = { attempt: number; stars: number; score: number; bonus: number };
+type SinkRecord = { attempt: number; stars: number; score: number; bonus?: number };
 
 function isSinkRecord(value: unknown): value is SinkRecord {
   if (typeof value !== 'object' || value === null) return false;
-  const { attempt, stars, score, bonus } = value as Record<string, unknown>;
-  return typeof attempt === 'number' && typeof stars === 'number' && typeof score === 'number' && typeof bonus === 'number';
+  const { attempt, stars, score } = value as Record<string, unknown>;
+  return typeof attempt === 'number' && typeof stars === 'number' && typeof score === 'number';
 }
 
 export async function getMyRound(dayKey: string, username: string): Promise<MyRound> {
@@ -124,7 +124,10 @@ export async function getMyRound(dayKey: string, username: string): Promise<MyRo
   const sunk = parseJson(sunkRaw);
   return {
     attempts: toInt(attempts),
-    sunk: isSinkRecord(sunk) ? { attempt: sunk.attempt, stars: sunk.stars, score: sunk.score, bonus: sunk.bonus } : null,
+    // Sinks recorded before the clean table bonus existed have no bonus field.
+    sunk: isSinkRecord(sunk)
+      ? { attempt: sunk.attempt, stars: sunk.stars, score: sunk.score, bonus: typeof sunk.bonus === 'number' ? sunk.bonus : 0 }
+      : null,
   };
 }
 

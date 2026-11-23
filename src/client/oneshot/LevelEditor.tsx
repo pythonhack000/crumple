@@ -4,20 +4,20 @@ import type { ErrorResponse, SubmitLevelResponse } from '../../shared/api';
 import type { Level, Point } from '../../shared/level';
 import { LIMITS, WORLD } from '../../shared/level';
 import { PHYSICS } from '../../shared/sim';
-import { LevelSketch, SketchButton } from './Sketchy';
+import { LevelSketch, SketchButton, SketchChip, SketchLink, ToolIcon } from './Sketchy';
 import { TryLevel } from './TryLevel';
 
 type Tool = 'shelf' | 'bumper' | 'star' | 'fan' | 'vent' | 'ball' | 'bin' | 'erase';
 
-const TOOLS: { id: Tool; label: string }[] = [
-  { id: 'shelf', label: 'Shelf' },
-  { id: 'bumper', label: 'Stress ball' },
-  { id: 'star', label: 'Star' },
-  { id: 'fan', label: 'Fan' },
-  { id: 'vent', label: 'Vents' },
-  { id: 'ball', label: 'Move ball' },
-  { id: 'bin', label: 'Move bin' },
-  { id: 'erase', label: 'Erase' },
+const TOOLS: { id: Tool; label: string; hint: string }[] = [
+  { id: 'shelf', label: 'Shelf', hint: 'Drag a line to draw a shelf. It follows your angle.' },
+  { id: 'bumper', label: 'Bouncy', hint: 'Tap to drop a stress ball. The ball bounces off it hard.' },
+  { id: 'star', label: 'Star', hint: 'Tap to place a star, up to three.' },
+  { id: 'fan', label: 'Fan', hint: 'Drag the way the air should blow.' },
+  { id: 'vent', label: 'Vents', hint: 'Tap two spots. A ball entering one pops out of the other.' },
+  { id: 'ball', label: 'Ball', hint: 'Tap where the ball starts.' },
+  { id: 'bin', label: 'Bin', hint: 'Tap where the bin goes.' },
+  { id: 'erase', label: 'Erase', hint: 'Tap a piece to remove it.' },
 ];
 
 const SHELF_THICKNESS = 12;
@@ -184,37 +184,37 @@ export function LevelEditor({ arts, username, onClose, onShared }: LevelEditorPr
           aria-label="Level name"
           className="min-w-0 flex-1 border-b-2 border-dashed border-ink/40 bg-transparent font-display text-2xl outline-none placeholder:text-ink-soft/60"
         />
-        <button type="button" onClick={onClose} className="text-sm text-ink-soft underline decoration-dotted underline-offset-4">
-          Close
-        </button>
+        <SketchLink onClick={onClose}>Close</SketchLink>
       </div>
-      <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm" role="radiogroup" aria-label="Tool">
+      <div className="flex flex-wrap justify-center gap-1" role="radiogroup" aria-label="Tool">
         {TOOLS.map((option) => (
-          <button
+          <SketchChip
             key={option.id}
-            type="button"
             role="radio"
             aria-checked={tool === option.id}
+            isSelected={tool === option.id}
             onClick={() => {
               setTool(option.id);
               setPendingVent(null);
+              setStatus(null);
             }}
-            className={tool === option.id ? 'font-display text-lg text-coral underline underline-offset-4' : 'text-ink-soft'}
           >
+            <ToolIcon tool={option.id} />
             {option.label}
-          </button>
+          </SketchChip>
         ))}
-        <button
-          type="button"
+        <SketchChip
+          isSelected={false}
           onClick={() => setHistory((past) => (past.length > 1 ? past.slice(0, -1) : past))}
           disabled={history.length < 2}
-          className="text-ink-soft disabled:opacity-30"
+          className="disabled:opacity-30"
         >
+          <ToolIcon tool="undo" />
           Undo
-        </button>
+        </SketchChip>
       </div>
       <div className="relative min-h-0 flex-1">
-        <LevelSketch level={level} className="pointer-events-none absolute inset-0 h-full w-full" />
+        <LevelSketch level={level} withPaper className="pointer-events-none absolute inset-0 h-full w-full" />
         <svg
           viewBox={`0 0 ${WORLD.width} ${WORLD.height}`}
           className="relative h-full w-full touch-none"
@@ -231,9 +231,6 @@ export function LevelEditor({ arts, username, onClose, onShared }: LevelEditorPr
             setDrag(null);
           }}
         >
-          {Array.from({ length: Math.floor(WORLD.height / 24) }, (_, i) => (
-            <line key={i} x1="0" x2={WORLD.width} y1={48 + i * 24} y2={48 + i * 24} className="stroke-ink/10" />
-          ))}
           {preview && (
             <line
               x1={preview.from.x}
@@ -250,10 +247,15 @@ export function LevelEditor({ arts, username, onClose, onShared }: LevelEditorPr
         </svg>
       </div>
       <p className="min-h-5 text-center text-sm text-ink-soft" role="status">
-        {status ?? (pendingVent ? 'Tap where the second vent goes.' : isBeaten ? 'You beat it. Share it with the subreddit.' : 'Beat your own level before you share it.')}
+        {status ??
+          (pendingVent
+            ? 'Now tap where the second vent goes.'
+            : isBeaten
+              ? 'You beat it. Share it with the subreddit.'
+              : (TOOLS.find((option) => option.id === tool)?.hint ?? ''))}
       </p>
       <div className="flex justify-center gap-2">
-        <SketchButton onClick={() => setIsTrying(true)}>Try it</SketchButton>
+        <SketchButton onClick={() => setIsTrying(true)}>{isBeaten ? 'Play again' : 'Beat it to share'}</SketchButton>
         <SketchButton tone="ink" disabled={!isBeaten || isSharing} onClick={() => void share()}>
           {isSharing ? 'Sharing…' : 'Share'}
         </SketchButton>

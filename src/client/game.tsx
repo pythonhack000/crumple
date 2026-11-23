@@ -13,7 +13,7 @@ import { isMuted, setMuted } from './oneshot/audio';
 import { BallEditor } from './oneshot/BallEditor';
 import { Community } from './oneshot/Community';
 import { LevelEditor } from './oneshot/LevelEditor';
-import { SketchButton } from './oneshot/Sketchy';
+import { SketchButton, SketchLink } from './oneshot/Sketchy';
 import { useRound } from './oneshot/useRound';
 
 const MISS_RESTART_MS = 450;
@@ -174,11 +174,20 @@ function Play({ data, reportShot, shotError }: PlayProps) {
           setArtImages(table.current.arts);
         });
         if (result.sunk && counts) {
-          // Redraw with everyone's paths once the server confirms the sink.
           void report.then((response) => {
-            if (!response?.ghosts.length) return;
-            table.current = { ...table.current, ghosts: response.ghosts };
-            restart.current();
+            if (response?.mine.sunk) {
+              // Confirmed: the result card shows; redraw with everyone's paths.
+              if (!response.ghosts.length) return;
+              table.current = { ...table.current, ghosts: response.ghosts };
+              restart.current();
+              return;
+            }
+            // Not confirmed (network trouble or already scored): never leave the player stuck.
+            setFlash(`In! ${'★'.repeat(result.stars)}`);
+            window.setTimeout(() => {
+              setFlash(null);
+              restart.current();
+            }, SINK_RESTART_MS);
           });
           return;
         }
@@ -242,23 +251,12 @@ function Play({ data, reportShot, shotError }: PlayProps) {
           </h1>
           <p className={`shrink-0 font-semibold tabular-nums ${flash ? 'text-coral' : ''}`}>{status}</p>
         </div>
-        <div className="flex gap-4 text-sm text-ink-soft">
-          <button type="button" onClick={() => setPanel('community')} className="underline decoration-dotted underline-offset-4">
-            Levels
-          </button>
-          {isLoggedIn && (
-            <button type="button" onClick={() => setIsDrawing(true)} className="underline decoration-dotted underline-offset-4">
-              {myArt ? 'Redraw your ball' : 'Draw your ball'}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={toggleSound}
-            aria-pressed={!muted}
-            className="underline decoration-dotted underline-offset-4"
-          >
+        <div className="mt-1 flex gap-5">
+          <SketchLink onClick={() => setPanel('community')}>Levels</SketchLink>
+          {isLoggedIn && <SketchLink onClick={() => setIsDrawing(true)}>{myArt ? 'Your ball' : 'Draw your ball'}</SketchLink>}
+          <SketchLink onClick={toggleSound} aria-pressed={!muted}>
             {muted ? 'Sound off' : 'Sound on'}
-          </button>
+          </SketchLink>
         </div>
       </header>
       {!isLoggedIn && (
