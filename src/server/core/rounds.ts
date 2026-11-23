@@ -89,6 +89,7 @@ export async function recordShot(round: Round, username: string, shot: ShotReque
     const streak = await updateStreak(username, round.dayKey);
     await updateFlair(username, streak);
   }
+  if (!shot.sunk && shot.rest) await store.addLeftover(round.dayKey, username, shot.rest);
   if (shot.sunk) {
     const result = { attempt, stars: shot.stars, score: shotScore(attempt, shot.stars) };
     if (await store.recordSink(round.dayKey, username, result, shot.path)) {

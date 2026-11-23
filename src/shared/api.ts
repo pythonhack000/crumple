@@ -17,6 +17,8 @@ export type RoundView = {
 /** One player's progress on one round. */
 export type MyRound = {
   attempts: number;
+  /** Where this player's missed balls stopped; they stay on the table. */
+  leftovers: Point[];
   sunk: { attempt: number; stars: number; score: number } | null;
 };
 
@@ -50,6 +52,8 @@ export type ShotRequest = {
   sunk: boolean;
   stars: number;
   path: Point[];
+  /** Where a missed ball stopped, if it stayed on the table. */
+  rest: Point | null;
 };
 
 export type ShotResponse = {

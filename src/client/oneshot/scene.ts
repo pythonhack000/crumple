@@ -1,15 +1,17 @@
 import Phaser from 'phaser';
 import type { Level, Point } from '../../shared/level';
 import { WORLD } from '../../shared/level';
-import { createSim, gravityPerStep, launchVelocity, PHYSICS, previewArc } from '../../shared/sim';
+import { createSim, gravityPerStep, launchVelocity, PHYSICS, previewArc, usableLeftovers } from '../../shared/sim';
 import type { Sim, SimEvent } from '../../shared/sim';
 import { COLORS } from './theme';
 
-export type ShotResult = { sunk: boolean; stars: number; path: Point[] };
+export type ShotResult = { sunk: boolean; stars: number; path: Point[]; rest: Point | null };
 
 export type SceneData = {
   level: Level;
   ghosts: Point[][];
+  /** Missed balls from earlier shots; they stay on the table as obstacles. */
+  leftovers: Point[];
   onLaunch: () => void;
   onResult: (result: ShotResult) => void;
 };
@@ -48,7 +50,7 @@ export class PlayScene extends Phaser.Scene {
 
   init(data: SceneData) {
     this.setup = data;
-    this.sim = createSim(data.level);
+    this.sim = createSim(data.level, data.leftovers);
     this.stars = [];
     this.bumpers = [];
     this.trailPoints = [];
@@ -63,6 +65,7 @@ export class PlayScene extends Phaser.Scene {
     this.drawBackground();
     this.drawGhosts();
     this.drawLevel();
+    this.drawLeftovers();
 
     this.trail = this.add.graphics();
     this.aim = this.add.graphics();
@@ -108,6 +111,29 @@ export class PlayScene extends Phaser.Scene {
       for (const point of path.slice(1)) g.lineTo(point.x, point.y);
       g.strokePath();
     }
+  }
+
+  private drawLeftovers() {
+    const leftovers = usableLeftovers(this.setup.level, this.setup.leftovers);
+    leftovers.forEach((point, index) => {
+      const isNewest = index === leftovers.length - 1;
+      const ball = this.add
+        .circle(point.x, point.y, PHYSICS.ballRadius, COLORS.felt)
+        .setStrokeStyle(2.5, COLORS.inkSoft);
+      this.add
+        .text(point.x, point.y + 0.5, String(index + 1), {
+          fontFamily: 'Bricolage Grotesque Variable, system-ui, sans-serif',
+          fontSize: '11px',
+          fontStyle: 'bold',
+          color: '#5d7d73',
+        })
+        .setOrigin(0.5);
+      if (isNewest) {
+        // The ball you just missed with settles into place.
+        ball.setScale(1.4);
+        this.tweens.add({ targets: ball, scale: 1, duration: 260, ease: 'Back.easeOut' });
+      }
+    });
   }
 
   private drawLevel() {
@@ -261,7 +287,7 @@ export class PlayScene extends Phaser.Scene {
   private finish(sunk: boolean) {
     if (this.finished) return;
     this.finished = true;
-    const result = { sunk, stars: this.sim.stars, path: this.sim.path() };
+    const result = { sunk, stars: this.sim.stars, path: this.sim.path(), rest: this.sim.restPoint() };
     this.time.delayedCall(sunk ? 700 : 350, () => this.setup.onResult(result));
   }
 

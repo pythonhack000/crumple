@@ -21,6 +21,7 @@ export type PlayerRecord = {
 
 /** Sinking paths kept per round for the ghost overlay. */
 export const MAX_GHOSTS = 60;
+export const MAX_LEFTOVERS = 30;
 
 const key = {
   current: 'current',
@@ -34,6 +35,7 @@ const key = {
   board: (day: string) => `board:${day}`,
   ghosts: (day: string) => `ghosts:${day}`,
   holesInOne: (day: string) => `hio:${day}`,
+  leftovers: (day: string) => `left:${day}`,
   player: (username: string) => `player:${username}`,
 };
 
@@ -115,13 +117,15 @@ function isSinkRecord(value: unknown): value is SinkRecord {
 }
 
 export async function getMyRound(dayKey: string, username: string): Promise<MyRound> {
-  const [attempts, sunkRaw] = await Promise.all([
+  const [attempts, sunkRaw, leftoversRaw] = await Promise.all([
     redis.hGet(key.attempts(dayKey), username),
     redis.hGet(key.sunk(dayKey), username),
+    redis.hGet(key.leftovers(dayKey), username),
   ]);
   const sunk = parseJson(sunkRaw);
   return {
     attempts: toInt(attempts),
+    leftovers: parsePath(leftoversRaw) ?? [],
     sunk: isSinkRecord(sunk) ? { attempt: sunk.attempt, stars: sunk.stars, score: sunk.score } : null,
   };
 }
@@ -129,6 +133,13 @@ export async function getMyRound(dayKey: string, username: string): Promise<MyRo
 /** Counts one more shot and returns the new attempt number. */
 export async function addAttempt(dayKey: string, username: string): Promise<number> {
   return redis.hIncrBy(key.attempts(dayKey), username, 1);
+}
+
+/** Keeps a missed ball on this player's table, newest last, capped. */
+export async function addLeftover(dayKey: string, username: string, point: Point): Promise<void> {
+  const current = parsePath(await redis.hGet(key.leftovers(dayKey), username)) ?? [];
+  const next = [...current, point].slice(-MAX_LEFTOVERS);
+  await redis.hSet(key.leftovers(dayKey), { [username]: JSON.stringify(next) });
 }
 
 /** Records the first sink; returns false if the player already sank this round. */

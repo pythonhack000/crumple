@@ -11,7 +11,7 @@ const MARGIN = 80;
  */
 export function parseShot(body: unknown, starCount: number): ShotRequest | undefined {
   if (typeof body !== 'object' || body === null) return undefined;
-  const { sunk, stars, path } = body as Record<string, unknown>;
+  const { sunk, stars, path, rest } = body as Record<string, unknown>;
   if (typeof sunk !== 'boolean') return undefined;
   if (typeof stars !== 'number' || !Number.isInteger(stars) || stars < 0 || stars > starCount) return undefined;
   if (!Array.isArray(path) || path.length > PHYSICS.pathMax) return undefined;
@@ -24,5 +24,13 @@ export function parseShot(body: unknown, starCount: number): ShotRequest | undef
     points.push({ x: Math.round(x), y: Math.round(y) });
   }
   if (sunk && points.length === 0) return undefined;
-  return { sunk, stars: sunk ? stars : 0, path: points };
+  return { sunk, stars: sunk ? stars : 0, path: points, rest: sunk ? null : parseRest(rest) };
+}
+
+function parseRest(value: unknown): Point | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { x, y } = value as Record<string, unknown>;
+  if (typeof x !== 'number' || typeof y !== 'number') return null;
+  if (!(x >= 0 && x <= WORLD.width && y >= 0 && y <= WORLD.height)) return null;
+  return { x: Math.round(x), y: Math.round(y) };
 }

@@ -20,6 +20,8 @@ export const PHYSICS = {
   pathEvery: 3,
   pathMax: 240,
   portalCooldown: 20,
+  /** Leftover balls from missed shots kept on the table. */
+  maxLeftovers: 30,
 } as const;
 
 export type SimEvent =
@@ -32,7 +34,7 @@ export type SimEvent =
 
 export type SimStatus = 'aiming' | 'flying' | 'sunk' | 'missed';
 
-type Kind = 'ball' | 'wall' | 'bumper' | 'cup' | 'cupSensor' | 'star' | 'portal' | 'fan' | 'edge';
+type Kind = 'ball' | 'leftover' | 'wall' | 'bumper' | 'cup' | 'cupSensor' | 'star' | 'portal' | 'fan' | 'edge';
 type Tag = { kind: Kind; index: number; end?: 'a' | 'b' };
 
 const tags = new WeakMap<Matter.Body, Tag>();
@@ -97,7 +99,26 @@ function edgeBodies(): Matter.Body[] {
 
 export type Sim = ReturnType<typeof createSim>;
 
-export function createSim(level: Level) {
+/**
+ * Leftover balls that can safely sit on the table: not on the tee, not in the
+ * cup, inside the playfield. A ball spawned inside another would explode.
+ */
+export function usableLeftovers(level: Level, leftovers: readonly Point[]): Point[] {
+  const clear = PHYSICS.ballRadius * 2.4;
+  return leftovers
+    .filter(
+      (point) =>
+        point.x >= 0 &&
+        point.x <= WORLD.width &&
+        point.y >= 0 &&
+        point.y <= WORLD.height &&
+        Math.hypot(point.x - level.ball.x, point.y - level.ball.y) > clear &&
+        Math.hypot(point.x - level.cup.x, point.y - level.cup.y) > PHYSICS.cupInner
+    )
+    .slice(-PHYSICS.maxLeftovers);
+}
+
+export function createSim(level: Level, leftovers: readonly Point[] = []) {
   const engine = Matter.Engine.create({ enableSleeping: false });
   const ball = tag(
     Matter.Bodies.circle(level.ball.x, level.ball.y, PHYSICS.ballRadius, {
@@ -137,7 +158,14 @@ export function createSim(level: Level) {
     tag(Matter.Bodies.rectangle(f.x, f.y, f.w, f.h, { isStatic: true, isSensor: true }), { kind: 'fan', index })
   );
 
-  Matter.Composite.add(engine.world, [ball, ...walls, ...bumpers, ...stars, ...portals, ...fans, ...cupBodies(level.cup), ...edgeBodies()]);
+  const leftoverBodies = usableLeftovers(level, leftovers).map((point, index) =>
+    tag(
+      Matter.Bodies.circle(point.x, point.y, PHYSICS.ballRadius, { isStatic: true, restitution: 0.5, friction: 0.1 }),
+      { kind: 'leftover', index }
+    )
+  );
+
+  Matter.Composite.add(engine.world, [ball, ...leftoverBodies, ...walls, ...bumpers, ...stars, ...portals, ...fans, ...cupBodies(level.cup), ...edgeBodies()]);
 
   let status: SimStatus = 'aiming';
   let steps = 0;
@@ -171,7 +199,7 @@ export function createSim(level: Level) {
         }
       } else if (info.kind === 'bumper') {
         pending.push({ type: 'bump' });
-      } else if (info.kind === 'wall' || info.kind === 'cup' || info.kind === 'edge') {
+      } else if (info.kind === 'wall' || info.kind === 'leftover' || info.kind === 'cup' || info.kind === 'edge') {
         pending.push({ type: 'hit', speed: Matter.Vector.magnitude(ball.velocity) });
       }
     }
@@ -203,6 +231,13 @@ export function createSim(level: Level) {
     },
     collectedStars: () => new Set(collected),
     path: () => [...path],
+    /** Where a missed ball came to rest, or null if it left the table. */
+    restPoint(): Point | null {
+      if (status !== 'missed') return null;
+      const { x, y } = ball.position;
+      if (x < 0 || x > WORLD.width || y < 0 || y > WORLD.height) return null;
+      return { x: Math.round(x), y: Math.round(y) };
+    },
     launch(drag: Point) {
       if (status !== 'aiming') return;
       const velocity = launchVelocity(drag);

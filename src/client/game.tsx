@@ -5,12 +5,14 @@ import { createRoot } from 'react-dom/client';
 import type Phaser from 'phaser';
 import { navigateToPost, showLoginPrompt } from '@devvit/web/client';
 import type { InitResponse, LeaderRow, MyRound } from '../shared/api';
-import type { Level, Point } from '../shared/level';
+import type { Level } from '../shared/level';
+import { PHYSICS } from '../shared/sim';
 import { createGame } from './oneshot/scene';
 import type { SceneData, ShotResult } from './oneshot/scene';
 import { useRound } from './oneshot/useRound';
 
 const MISS_RESTART_MS = 450;
+const SINK_RESTART_MS = 1100;
 
 function Stars({ got, of }: { got: number; of: number }) {
   return (
@@ -91,42 +93,59 @@ function Play({ data, reportShot, shotError }: PlayProps) {
   const game = useRef<Phaser.Game | null>(null);
   const [hasLaunched, setHasLaunched] = useState((data.mine?.attempts ?? 0) > 0);
   const [isPractice, setIsPractice] = useState(false);
-  const [missFlash, setMissFlash] = useState(false);
+  const [flash, setFlash] = useState<string | null>(null);
   const level: Level = data.round.level;
   const sunk = data.mine?.sunk ?? null;
   const isLoggedIn = data.me !== null;
   const isClosed = data.round.status === 'closed';
 
-  // Latest values for scene callbacks, which outlive renders.
-  const latest = useRef({ reportShot, ghosts: data.ghosts });
+  // Scene callbacks outlive renders, so they read the latest values from refs.
+  const latest = useRef({ reportShot, isPractice: false });
   useEffect(() => {
-    latest.current = { reportShot, ghosts: data.ghosts };
-  }, [reportShot, data.ghosts]);
+    latest.current = { reportShot, isPractice };
+  }, [reportShot, isPractice]);
+  // What is on the table: other players' paths and this player's missed balls.
+  const table = useRef({ ghosts: data.ghosts, leftovers: data.mine?.leftovers ?? [] });
+
+  const restart = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     if (!holder.current) return;
-    const restart = (ghosts: Point[][]) => game.current?.scene.getScene('play')?.scene.restart(makeData(ghosts));
-    const makeData = (ghosts: Point[][]): SceneData => ({
+    const makeData = (): SceneData => ({
       level,
-      ghosts,
+      ghosts: table.current.ghosts,
+      leftovers: table.current.leftovers,
       onLaunch: () => setHasLaunched(true),
       onResult: (result: ShotResult) => {
-        const report = isLoggedIn && !isClosed ? latest.current.reportShot(result) : Promise.resolve(undefined);
-        if (result.sunk) {
+        const counts = !latest.current.isPractice && isLoggedIn && !isClosed;
+        const report = counts ? latest.current.reportShot(result) : Promise.resolve(undefined);
+        if (!result.sunk && result.rest) {
+          table.current = {
+            ...table.current,
+            leftovers: [...table.current.leftovers, result.rest].slice(-PHYSICS.maxLeftovers),
+          };
+        }
+        if (result.sunk && counts) {
           // Redraw with everyone's paths once the server confirms the sink.
           void report.then((response) => {
-            if (response?.ghosts.length) restart(response.ghosts);
+            if (!response?.ghosts.length) return;
+            table.current = { ...table.current, ghosts: response.ghosts };
+            restart.current();
           });
           return;
         }
-        setMissFlash(true);
-        window.setTimeout(() => {
-          setMissFlash(false);
-          restart(latest.current.ghosts);
-        }, MISS_RESTART_MS);
+        setFlash(result.sunk ? `In! ${'★'.repeat(result.stars)}` : 'Missed');
+        window.setTimeout(
+          () => {
+            setFlash(null);
+            restart.current();
+          },
+          result.sunk ? SINK_RESTART_MS : MISS_RESTART_MS
+        );
       },
     });
-    game.current = createGame(holder.current, makeData(latest.current.ghosts));
+    restart.current = () => game.current?.scene.getScene('play')?.scene.restart(makeData());
+    game.current = createGame(holder.current, makeData());
     return () => {
       game.current?.destroy(true);
       game.current = null;
@@ -134,14 +153,15 @@ function Play({ data, reportShot, shotError }: PlayProps) {
   }, [level, isLoggedIn, isClosed]);
 
   const handlePractice = () => {
+    latest.current = { ...latest.current, isPractice: true };
     setIsPractice(true);
-    game.current?.scene.getScene('play')?.scene.restart({ ...game.current.scene.getScene('play')?.sys.settings.data });
+    restart.current();
   };
 
   const attempts = data.mine?.attempts ?? 0;
   let status = `Shot ${attempts + 1}`;
   if (sunk) status = isPractice ? 'Practice' : `In on shot ${sunk.attempt}`;
-  if (missFlash) status = 'Missed';
+  if (flash) status = flash;
 
   return (
     <main className="relative mx-auto flex h-screen max-w-[480px] flex-col bg-felt text-ink select-none">
@@ -149,7 +169,7 @@ function Play({ data, reportShot, shotError }: PlayProps) {
         <h1 className="truncate font-display text-xl font-bold">
           #{data.round.dayNumber} <span className="font-normal text-ink-soft">{level.name}</span>
         </h1>
-        <p className={`shrink-0 font-semibold tabular-nums ${missFlash ? 'text-coral' : ''}`}>{status}</p>
+        <p className={`shrink-0 font-semibold tabular-nums ${flash ? 'text-coral' : ''}`}>{status}</p>
       </header>
       {!isLoggedIn && (
         <button
