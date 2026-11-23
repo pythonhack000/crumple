@@ -7,6 +7,7 @@ type CommunityProps = {
   arts: Record<string, HTMLImageElement>;
   username: string | undefined;
   onBuild: () => void;
+  onRemix: (level: CommunityLevel) => void;
   onClose: () => void;
 };
 
@@ -19,7 +20,7 @@ async function readBody<T>(response: Response): Promise<T> {
 }
 
 /** Player-made levels; the most upvoted one becomes tomorrow's daily level. */
-export function Community({ arts, username, onBuild, onClose }: CommunityProps) {
+export function Community({ arts, username, onBuild, onRemix, onClose }: CommunityProps) {
   const [levels, setLevels] = useState<CommunityLevel[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [trying, setTrying] = useState<CommunityLevel | null>(null);
@@ -91,9 +92,11 @@ export function Community({ arts, username, onBuild, onClose }: CommunityProps) 
                 <p className="truncate text-sm text-ink-soft">
                   by u/{item.author}, {item.votes} {item.votes === 1 ? 'upvote' : 'upvotes'}
                 </p>
+                {item.level.basedOn && <p className="truncate text-xs text-ink-soft">remix of u/{item.level.basedOn}</p>}
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1 text-sm">
                 <SketchLink onClick={() => setTrying(item)}>Try it</SketchLink>
+                {username && <SketchLink onClick={() => onRemix(item)} className="mt-2">Remix</SketchLink>}
                 <SketchLink
                   disabled={item.voted || isMine || !username}
                   onClick={() => void upvote(item)}

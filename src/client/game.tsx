@@ -137,6 +137,7 @@ function Play({ data, reportShot, shotError }: PlayProps) {
   const username = data.me?.username;
   const [isDrawing, setIsDrawing] = useState(false);
   const [panel, setPanel] = useState<'community' | 'editor' | null>(null);
+  const [remixFrom, setRemixFrom] = useState<Level | undefined>(undefined);
   const [artImages, setArtImages] = useState<Record<string, HTMLImageElement>>({});
   const [myArt, setMyArt] = useState<string | null>(username ? (data.arts[username] ?? null) : null);
 
@@ -283,18 +284,34 @@ function Play({ data, reportShot, shotError }: PlayProps) {
         <BallEditor current={myArt} onClose={() => setIsDrawing(false)} onSaved={(art) => void handleArtSaved(art)} />
       )}
       {sunk && !isPractice && !isDrawing && !panel && (
-        <ResultCard data={data} sunk={sunk} onPractice={handlePractice} onBuild={() => setPanel('editor')} />
+        <ResultCard data={data} sunk={sunk} onPractice={handlePractice} onBuild={() => {
+            setRemixFrom(undefined);
+            setPanel('editor');
+          }} />
       )}
       {panel === 'community' && (
         <Community
           arts={artImages}
           username={username}
-          onBuild={() => setPanel(isLoggedIn ? 'editor' : null)}
+          onBuild={() => {
+            setRemixFrom(undefined);
+            setPanel(isLoggedIn ? 'editor' : null);
+          }}
+          onRemix={(item) => {
+            setRemixFrom({
+              ...item.level,
+              name: `${item.level.name} remix`.slice(0, 32),
+              author: null,
+              basedOn: item.level.basedOn ?? item.author,
+            });
+            setPanel('editor');
+          }}
           onClose={() => setPanel(null)}
         />
       )}
       {panel === 'editor' && (
         <LevelEditor
+          {...(remixFrom ? { initial: remixFrom } : {})}
           arts={artImages}
           username={username}
           onClose={() => setPanel(null)}

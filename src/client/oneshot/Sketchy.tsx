@@ -125,6 +125,12 @@ export function ToolIcon({ tool }: { tool: string }) {
           <path d="M9 11 L15 16" strokeWidth={1.4} />
         </g>
       )}
+      {tool === 'move' && (
+        <g {...common}>
+          <path d="M12 3 V21 M3 12 H21" strokeWidth={1.6} />
+          <path d="M9 6 L12 3 L15 6 M9 18 L12 21 L15 18 M6 9 L3 12 L6 15 M18 9 L21 12 L18 15" />
+        </g>
+      )}
       {tool === 'undo' && (
         <g {...common}>
           <path d="M9 7 L4 11 L9 15" />

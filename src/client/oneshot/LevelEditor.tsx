@@ -1,15 +1,18 @@
 import { useMemo, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { ErrorResponse, SubmitLevelResponse } from '../../shared/api';
+import { movePiece, pickPiece, wallEnds } from '../../shared/editing';
+import type { Pick } from '../../shared/editing';
 import type { Level, Point } from '../../shared/level';
 import { LIMITS, WORLD } from '../../shared/level';
 import { PHYSICS } from '../../shared/sim';
 import { LevelSketch, SketchButton, SketchChip, SketchLink, ToolIcon } from './Sketchy';
 import { TryLevel } from './TryLevel';
 
-type Tool = 'shelf' | 'bumper' | 'star' | 'fan' | 'vent' | 'ball' | 'bin' | 'erase';
+type Tool = 'move' | 'shelf' | 'bumper' | 'star' | 'fan' | 'vent' | 'ball' | 'bin' | 'erase';
 
 const TOOLS: { id: Tool; label: string; hint: string }[] = [
+  { id: 'move', label: 'Move', hint: 'Drag anything to move it. Drag a shelf by its end to turn and stretch it.' },
   { id: 'shelf', label: 'Shelf', hint: 'Drag a line to draw a shelf. It follows your angle.' },
   { id: 'bumper', label: 'Bouncy', hint: 'Tap to drop a stress ball. The ball bounces off it hard.' },
   { id: 'star', label: 'Star', hint: 'Tap to place a star, up to three.' },
@@ -68,17 +71,20 @@ function erase(level: Level, at: Point): Level {
 }
 
 type LevelEditorProps = {
+  /** A level to start from, e.g. when remixing someone else's. */
+  initial?: Level;
   arts: Record<string, HTMLImageElement>;
   username: string | undefined;
   onClose: () => void;
   onShared: () => void;
 };
 
-export function LevelEditor({ arts, username, onClose, onShared }: LevelEditorProps) {
-  const [history, setHistory] = useState<Level[]>([START_LEVEL]);
+export function LevelEditor({ initial, arts, username, onClose, onShared }: LevelEditorProps) {
+  const [history, setHistory] = useState<Level[]>([initial ?? START_LEVEL]);
   const level = history[history.length - 1] ?? START_LEVEL;
-  const [name, setName] = useState('');
-  const [tool, setTool] = useState<Tool>('shelf');
+  const [name, setName] = useState(initial?.name ?? '');
+  const [tool, setTool] = useState<Tool>('move');
+  const [grab, setGrab] = useState<{ pick: Pick; base: Level; from: Point; live: Level } | null>(null);
   const [drag, setDrag] = useState<{ from: Point; to: Point } | null>(null);
   const [pendingVent, setPendingVent] = useState<Point | null>(null);
   const [isTrying, setIsTrying] = useState(false);
@@ -186,6 +192,7 @@ export function LevelEditor({ arts, username, onClose, onShared }: LevelEditorPr
         />
         <SketchLink onClick={onClose}>Close</SketchLink>
       </div>
+      {level.basedOn && <p className="-mt-1 text-sm text-ink-soft">Remix of a level by u/{level.basedOn}</p>}
       <div className="flex flex-wrap justify-center gap-1" role="radiogroup" aria-label="Tool">
         {TOOLS.map((option) => (
           <SketchChip
@@ -214,19 +221,31 @@ export function LevelEditor({ arts, username, onClose, onShared }: LevelEditorPr
         </SketchChip>
       </div>
       <div className="relative min-h-0 flex-1">
-        <LevelSketch level={level} withPaper className="pointer-events-none absolute inset-0 h-full w-full" />
+        <LevelSketch level={grab?.live ?? level} withPaper className="pointer-events-none absolute inset-0 h-full w-full" />
         <svg
           viewBox={`0 0 ${WORLD.width} ${WORLD.height}`}
           className="relative h-full w-full touch-none"
           onPointerDown={(event) => {
             event.currentTarget.setPointerCapture(event.pointerId);
             const at = toWorld(event);
+            if (tool === 'move') {
+              const pick = pickPiece(level, at);
+              if (pick) setGrab({ pick, base: level, from: at, live: level });
+              else setStatus('Grab a piece to move it, or pick a tool above to add one.');
+              return;
+            }
             setDrag({ from: at, to: at });
           }}
           onPointerMove={(event) => {
-            if (drag) setDrag({ ...drag, to: toWorld(event) });
+            if (grab) setGrab({ ...grab, live: movePiece(grab.base, grab.pick, grab.from, toWorld(event)) });
+            else if (drag) setDrag({ ...drag, to: toWorld(event) });
           }}
           onPointerUp={(event) => {
+            if (grab) {
+              commit(movePiece(grab.base, grab.pick, grab.from, toWorld(event)));
+              setGrab(null);
+              return;
+            }
             if (drag) handleDragEnd(drag.from, toWorld(event));
             setDrag(null);
           }}
@@ -243,6 +262,13 @@ export function LevelEditor({ arts, username, onClose, onShared }: LevelEditorPr
               strokeLinecap="round"
             />
           )}
+          {tool === 'move' &&
+            (grab?.live ?? level).walls.flatMap((wall, index) => {
+              const { a, b } = wallEnds(wall);
+              return [a, b].map((end, j) => (
+                <circle key={`${index}${j}`} cx={end.x} cy={end.y} r="7" className="fill-felt stroke-coral" strokeWidth="2" />
+              ));
+            })}
           {pendingVent && <circle cx={pendingVent.x} cy={pendingVent.y} r={PHYSICS.portalRadius} className="fill-none stroke-coral" strokeWidth="3" strokeDasharray="4 4" />}
         </svg>
       </div>

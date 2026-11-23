@@ -20,6 +20,8 @@ export type Fan = { x: number; y: number; w: number; h: number; angle: number };
 export type Level = {
   name: string;
   author: string | null;
+  /** For remixes: the username of the original level's maker. */
+  basedOn?: string;
   ball: Point;
   cup: Point;
   walls: Wall[];
@@ -28,6 +30,8 @@ export type Level = {
   fans: Fan[];
   stars: Point[];
 };
+
+const USERNAME = /^[A-Za-z0-9_-]{3,40}$/;
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -88,7 +92,8 @@ export function parseLevel(value: unknown): Level | undefined {
   const fans = list(value.fans, LIMITS.fans, (item) => rect(item, 20, 360));
   const stars = list(value.stars, LIMITS.stars, point);
   if (!name || !ball || !cup || !walls || !bumpers || !portals || !fans || !stars) return undefined;
-  return { name, author, ball, cup, walls, bumpers, portals, fans, stars };
+  const basedOn = typeof value.basedOn === 'string' && USERNAME.test(value.basedOn) ? value.basedOn : undefined;
+  return { name, author, ...(basedOn ? { basedOn } : {}), ball, cup, walls, bumpers, portals, fans, stars };
 }
 
 export const SCORE = {

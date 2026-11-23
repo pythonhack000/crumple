@@ -74,3 +74,8 @@ test('cleanTableBonus is full on a clean table and shrinks with the pile', () =>
 test('shotScore adds the clean-table bonus', () => {
   assert.equal(shotScore(1, 0, 0), SCORE.cup + SCORE.cleanTableMax);
 });
+
+test('parseLevel keeps a valid remix credit and drops a bad one', () => {
+  assert.equal(parseLevel({ ...valid, basedOn: 'quiet_fox' })?.basedOn, 'quiet_fox');
+  assert.equal(parseLevel({ ...valid, basedOn: '<b>x</b>' })?.basedOn, undefined);
+});
