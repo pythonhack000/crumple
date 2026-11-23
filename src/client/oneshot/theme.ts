@@ -1,16 +1,12 @@
-/** One palette for the canvas and the React overlay. */
+/** One palette for the canvas and the React overlay: ballpoint pen on a notebook page. */
 export const COLORS = {
-  felt: 0xdceee5,
-  feltLine: 0xc9e2d6,
-  ink: 0x12302a,
-  inkSoft: 0x5d7d73,
-  coral: 0xff5a3c,
+  paper: 0xfbfaf6,
+  rule: 0xd4e2f3,
+  margin: 0xf3c6c0,
+  ink: 0x22408f,
+  inkSoft: 0x8a9cc8,
+  coral: 0xf2553a,
   white: 0xffffff,
 } as const;
 
-export const CSS = {
-  felt: '#dceee5',
-  ink: '#12302a',
-  inkSoft: '#5d7d73',
-  coral: '#ff5a3c',
-} as const;
+export const FONT_HAND = 'Kalam, "Bradley Hand", cursive';

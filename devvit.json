@@ -20,7 +20,7 @@
   "menu": {
     "items": [
       {
-        "label": "One Shot: open today's level",
+        "label": "Crumple: open today's level",
         "description": "Close yesterday and open today's level now",
         "location": "subreddit",
         "forUserType": "moderator",

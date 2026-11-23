@@ -44,7 +44,7 @@ export function Splash() {
   return (
     <main className="flex min-h-screen flex-col justify-between gap-4 bg-felt p-5 text-ink">
       <p className="text-ink-soft">
-        One Shot #{data.round.dayNumber}. Same level for everyone. Every miss stays on the table.{streak}
+        Crumple #{data.round.dayNumber}. Same level for everyone. Every miss stays on the table.{streak}
       </p>
       <h1 className="font-display text-[2.4rem] font-bold leading-[1.02]">{data.round.level.name}</h1>
       <div className="flex flex-col gap-3">

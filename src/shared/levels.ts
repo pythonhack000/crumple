@@ -16,7 +16,7 @@ const base = {
 export const BUILT_IN_LEVELS: readonly Level[] = [
   {
     ...base,
-    name: 'Warm-up',
+    name: 'Monday, first coffee',
     ball: { x: 60, y: 500 },
     cup: { x: 290, y: 430 },
     walls: [
@@ -30,7 +30,7 @@ export const BUILT_IN_LEVELS: readonly Level[] = [
   },
   {
     ...base,
-    name: 'Over the wall',
+    name: 'Cubicle wall',
     ball: { x: 50, y: 540 },
     cup: { x: 300, y: 520 },
     walls: [
@@ -46,7 +46,7 @@ export const BUILT_IN_LEVELS: readonly Level[] = [
   },
   {
     ...base,
-    name: 'Bank it',
+    name: 'Off the whiteboard',
     ball: { x: 60, y: 540 },
     cup: { x: 80, y: 250 },
     walls: [
@@ -63,7 +63,7 @@ export const BUILT_IN_LEVELS: readonly Level[] = [
   },
   {
     ...base,
-    name: 'Pinball',
+    name: 'Stress balls',
     ball: { x: 180, y: 560 },
     cup: { x: 180, y: 120 },
     walls: [{ x: 180, y: 580, w: 70, h: 12, angle: 0 }],
@@ -82,7 +82,7 @@ export const BUILT_IN_LEVELS: readonly Level[] = [
   },
   {
     ...base,
-    name: 'Updraft',
+    name: 'Desk fan',
     ball: { x: 50, y: 540 },
     cup: { x: 300, y: 120 },
     walls: [
@@ -98,7 +98,7 @@ export const BUILT_IN_LEVELS: readonly Level[] = [
   },
   {
     ...base,
-    name: 'Shortcut',
+    name: 'Air vent',
     ball: { x: 60, y: 540 },
     cup: { x: 290, y: 140 },
     walls: [
@@ -116,7 +116,7 @@ export const BUILT_IN_LEVELS: readonly Level[] = [
   },
   {
     ...base,
-    name: 'Zigzag',
+    name: 'Bookshelves',
     ball: { x: 320, y: 560 },
     cup: { x: 70, y: 300 },
     walls: [
@@ -133,7 +133,7 @@ export const BUILT_IN_LEVELS: readonly Level[] = [
   },
   {
     ...base,
-    name: 'The works',
+    name: 'Friday, 4:59 pm',
     ball: { x: 40, y: 560 },
     cup: { x: 320, y: 300 },
     walls: [

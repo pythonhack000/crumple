@@ -1,15 +1,16 @@
-@import '@fontsource-variable/bricolage-grotesque/index.css';
+@import '@fontsource/kalam/400.css';
+@import '@fontsource/kalam/700.css';
 @import 'tailwindcss';
 
 @theme {
-  --font-display: 'Bricolage Grotesque Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Kalam', 'Bradley Hand', cursive;
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
-  /* One palette for the canvas and the overlay; see oneshot/theme.ts. */
-  --color-felt: #dceee5;
-  --color-ink: #12302a;
-  --color-ink-soft: #5d7d73;
-  --color-coral: #ff5a3c;
+  /* Ballpoint pen on a notebook page; mirrors oneshot/theme.ts. */
+  --color-felt: #fbfaf6;
+  --color-ink: #22408f;
+  --color-ink-soft: #5f6f9e;
+  --color-coral: #f2553a;
 }
 
 html,

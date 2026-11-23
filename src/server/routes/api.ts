@@ -29,7 +29,7 @@ api.get('/init', async (c) => {
 
   try {
     const round = await store.getRoundForPost(postId);
-    if (!round) return c.json(fail('This post is not a One Shot round.'), 404);
+    if (!round) return c.json(fail('This post is not a Crumple round.'), 404);
 
     const username = (await reddit.getCurrentUsername()) ?? undefined;
     const mine = username ? await store.getMyRound(round.dayKey, username) : null;
@@ -57,7 +57,7 @@ api.post('/shot', async (c) => {
 
   try {
     const round = await store.getRoundForPost(postId);
-    if (!round) return c.json(fail('This post is not a One Shot round.'), 404);
+    if (!round) return c.json(fail('This post is not a Crumple round.'), 404);
     const shot = parseShot(await c.req.json().catch(() => undefined), round.level.stars.length);
     if (!shot) return c.json(fail('That shot could not be read.'), 400);
 

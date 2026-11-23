@@ -6,7 +6,7 @@ import { builtInLevelFor } from '../../shared/levels';
 import * as store from './store';
 import type { Round } from './store';
 
-export const GAME_NAME = 'One Shot';
+export const GAME_NAME = 'Crumple';
 const RESULTS_TOP = 3;
 /** A player cannot report more shots than this per round. */
 export const MAX_ATTEMPTS = 500;
