@@ -12,6 +12,7 @@ import { COLORS } from './theme';
 
 export type ShotResult = { sunk: boolean; stars: number; path: Point[]; rest: Point | null; stats: ShotStats };
 
+const SOLUTION = { steps: 20, width: 3, alpha: 0.85, fadeMs: 500 } as const;
 const HINT = { size: 17, gap: 34, halfWidth: 80, fadeMs: 400, delayMs: 600 } as const;
 
 export type SceneData = {
@@ -27,6 +28,8 @@ export type SceneData = {
   material: Material;
   /** Shows how to throw, written above the ball, until the first drag. */
   showHint?: boolean;
+  /** A throw known to sink, drawn as the opening of its flight while aiming. */
+  solution?: Point | null;
   onLaunch: () => void;
   onResult: (result: ShotResult) => void;
 };
@@ -53,6 +56,7 @@ export class PlayScene extends Phaser.Scene {
   private aim!: Phaser.GameObjects.Graphics;
   private trail!: Phaser.GameObjects.Graphics;
   private hint: Phaser.GameObjects.Text | null = null;
+  private solutionArc: Phaser.GameObjects.Graphics | null = null;
   private wind!: Phaser.GameObjects.Graphics;
   private bin!: Phaser.GameObjects.Graphics;
   private stars: Phaser.GameObjects.Graphics[] = [];
@@ -101,6 +105,7 @@ export class PlayScene extends Phaser.Scene {
     this.ballScale = this.ball.scale;
     this.tweens.add({ targets: this.ball, scale: this.ballScale * 1.1, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     this.hint = this.setup.showHint ? this.writeHint(ball) : null;
+    if (this.setup.solution) this.showSolution(this.setup.solution);
 
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       unlock();
@@ -185,6 +190,24 @@ export class PlayScene extends Phaser.Scene {
       .setAlpha(0);
     this.tweens.add({ targets: text, alpha: 1, duration: HINT.fadeMs, delay: HINT.delayMs });
     return text;
+  }
+
+  /** Pencils the opening of a sinking throw in red, so the player can line their aim up with it. */
+  showSolution(drag: Point) {
+    if (this.sim.status !== 'aiming') return;
+    this.solutionArc?.destroy();
+    const from = { x: this.ball.x, y: this.ball.y };
+    const arc = previewArc(from, launchVelocity(drag), gravityPerStep(this.sim.engine), SOLUTION.steps);
+    const g = this.add.graphics().setAlpha(0);
+    for (let i = 0; i + 1 < arc.length; i += 2) {
+      const a = arc[i];
+      const b = arc[i + 1];
+      if (!a || !b) continue;
+      g.lineStyle(SOLUTION.width, COLORS.coral, 1 - i / arc.length);
+      g.lineBetween(a.x, a.y, b.x, b.y);
+    }
+    this.tweens.add({ targets: g, alpha: SOLUTION.alpha, duration: SOLUTION.fadeMs });
+    this.solutionArc = g;
   }
 
   private hideHint() {
@@ -348,6 +371,8 @@ export class PlayScene extends Phaser.Scene {
     this.tweens.killTweensOf(this.ball);
     this.ball.setScale(this.ballScale);
     this.sim.launch(drag);
+    this.solutionArc?.destroy();
+    this.solutionArc = null;
     sfx.launch(Math.min(Math.hypot(drag.x, drag.y), PHYSICS.fullPowerDrag) / PHYSICS.fullPowerDrag);
     this.setup.onLaunch();
   }

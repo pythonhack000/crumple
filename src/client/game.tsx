@@ -9,8 +9,9 @@ import type { Material } from '../shared/ball-art';
 import type { Level } from '../shared/level';
 import { shareText, TWIST_LABELS } from '../shared/share';
 import { nameShot } from '../shared/shot-names';
-import { PHYSICS } from '../shared/sim';
-import { createGame } from './oneshot/scene';
+import type { Point } from '../shared/level';
+import { findSolution, PHYSICS } from '../shared/sim';
+import { createGame, PlayScene } from './oneshot/scene';
 import type { SceneData, ShotResult } from './oneshot/scene';
 import { setMaterial } from './oneshot/audio';
 import { Settings } from './oneshot/Settings';
@@ -22,6 +23,8 @@ import { useRound } from './oneshot/useRound';
 
 const MISS_RESTART_MS = 450;
 const SINK_RESTART_MS = 1100;
+const HINT_AFTER_MISSES = 3;
+const HINT_PAINT_MS = 30;
 
 const STAR_PATH = 'M10 1.5 L12.4 7.2 L18.5 7.6 L13.8 11.6 L15.3 17.6 L10 14.3 L4.7 17.6 L6.2 11.6 L1.5 7.6 L7.6 7.2 Z';
 
@@ -223,6 +226,10 @@ function Play({ data, reportShot, shotError }: PlayProps) {
   const table = useRef({ ghosts: data.ghosts, pile: data.pile, arts: {} as Record<string, HTMLImageElement> });
 
   const restart = useRef<() => void>(() => undefined);
+  // Misses this session, so guests (whose throws are not counted) get the hint too.
+  const [misses, setMisses] = useState(0);
+  const [hint, setHint] = useState<'off' | 'thinking' | 'shown' | 'none'>('off');
+  const solution = useRef<Point | null>(null);
 
   useEffect(() => {
     if (!holder.current) return;
@@ -234,6 +241,7 @@ function Play({ data, reportShot, shotError }: PlayProps) {
       username,
       material: materialRef.current,
       showHint: !launchedRef.current,
+      solution: solution.current,
       onLaunch: () => {
         launchedRef.current = true;
       },
@@ -242,6 +250,7 @@ function Play({ data, reportShot, shotError }: PlayProps) {
         const report = counts
           ? latest.current.reportShot({ sunk: result.sunk, stars: result.stars, path: result.path, rest: result.rest, owners: result.stats.owners })
           : Promise.resolve(undefined);
+        if (!result.sunk) setMisses((count) => count + 1);
         if (!result.sunk && result.rest) {
           // Show the miss at once; the server's shared pile replaces it when it answers.
           const mineNow = { ...result.rest, mine: true, owner: username ?? '' };
@@ -315,6 +324,21 @@ function Play({ data, reportShot, shotError }: PlayProps) {
     restart.current();
   };
 
+  const handleHint = () => {
+    setHint('thinking');
+    // Let the label repaint before the solver blocks the thread for a moment.
+    window.setTimeout(() => {
+      solution.current = findSolution(level);
+      if (!solution.current) {
+        setHint('none');
+        return;
+      }
+      setHint('shown');
+      const scene = game.current?.scene.getScene('play');
+      if (scene instanceof PlayScene) scene.showSolution(solution.current);
+    }, HINT_PAINT_MS);
+  };
+
   const handlePractice = () => {
     latest.current = { ...latest.current, isPractice: true };
     setIsPractice(true);
@@ -325,6 +349,8 @@ function Play({ data, reportShot, shotError }: PlayProps) {
   let status = `Shot ${attempts + 1}`;
   if (sunk) status = isPractice ? 'Practice' : `In on shot ${sunk.attempt}`;
   if (flash) status = flash;
+  const canHint = !sunk && Math.max(attempts, misses) >= HINT_AFTER_MISSES;
+  const hintLabel = { off: 'Hint', thinking: 'Thinking', shown: 'Hint on', none: 'No hint' }[hint];
 
   return (
     <main className="relative mx-auto flex h-screen max-w-[480px] flex-col bg-felt text-ink select-none">
@@ -339,6 +365,11 @@ function Play({ data, reportShot, shotError }: PlayProps) {
           <SketchLink onClick={() => setPanel('community')}>Levels</SketchLink>
           {isLoggedIn && <SketchLink onClick={() => setIsDrawing(true)}>{myArt ? 'Your ball' : 'Draw your ball'}</SketchLink>}
           <SketchLink onClick={() => setIsSettingsOpen(true)}>Settings</SketchLink>
+          {canHint && (
+            <SketchLink onClick={handleHint} disabled={hint !== 'off'} className="ml-auto text-coral">
+              {hintLabel}
+            </SketchLink>
+          )}
         </div>
         {level.twist && (
           <p className="mt-1 font-display text-base text-coral">
