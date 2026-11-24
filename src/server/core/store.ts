@@ -320,6 +320,11 @@ export async function getBallArts(usernames: string[]): Promise<Record<string, s
 }
 
 /** Claims a once-per-day job; returns false if it already ran today. */
+/** Frees a claimed job so the next run can retry it. */
+export async function releaseJob(job: string, dayKey: string): Promise<void> {
+  await redis.del(`job:${job}:${dayKey}`);
+}
+
 export async function claimDailyJob(job: string, dayKey: string): Promise<boolean> {
   const claimKey = `job:${job}:${dayKey}`;
   if (await redis.get(claimKey)) return false;

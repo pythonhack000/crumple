@@ -2,8 +2,9 @@ import { Hono } from 'hono';
 import type { TaskResponse } from '@devvit/web/server';
 import type { TriggerResponse } from '@devvit/web/shared';
 import { dayKeyOf } from '../../shared/game';
+import { postGuide } from '../core/guide';
 import { repostToday, startDay } from '../core/rounds';
-import { claimDailyJob } from '../core/store';
+import { claimDailyJob, releaseJob } from '../core/store';
 
 export const triggers = new Hono();
 
@@ -42,6 +43,20 @@ scheduler.post('/repost-today', async (c) => {
     return c.json<TaskResponse>({ status: 'ok' }, 200);
   } catch (error) {
     console.error('Repost failed', error);
+    return c.json<TaskResponse>({ status: 'error' }, 500);
+  }
+});
+
+/** One-off: posts and pins the how-to-play guide. Guarded so it posts once however often it runs. */
+scheduler.post('/post-guide', async (c) => {
+  try {
+    if (!(await claimDailyJob('guide', 'once'))) return c.json<TaskResponse>({ status: 'ok' }, 200);
+    const postId = await postGuide();
+    console.log(`Guide posted as ${postId}`);
+    return c.json<TaskResponse>({ status: 'ok' }, 200);
+  } catch (error) {
+    console.error('Posting the guide failed', error);
+    await releaseJob('guide', 'once');
     return c.json<TaskResponse>({ status: 'error' }, 500);
   }
 });
