@@ -254,7 +254,9 @@ function Play({ data, reportShot, shotError }: PlayProps) {
         if (!result.sunk && result.rest) {
           // Show the miss at once; the server's shared pile replaces it when it answers.
           const mineNow = { ...result.rest, mine: true, owner: username ?? '' };
-          table.current = { ...table.current, pile: [...table.current.pile, mineNow].slice(-PHYSICS.maxLeftovers) };
+          // Each player keeps one ball on the table: the latest miss replaces the last one.
+          const others = table.current.pile.filter((ball) => !ball.mine);
+          table.current = { ...table.current, pile: [...others, mineNow].slice(-PHYSICS.maxLeftovers) };
         }
         void report.then(async (response) => {
           if (!response) return;

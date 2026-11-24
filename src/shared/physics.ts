@@ -24,6 +24,6 @@ export const PHYSICS = {
   glassBreakSpeed: 9,
   binSwing: 70,
   binPeriodSteps: 220,
-  /** Missed balls from everyone kept on the shared table. */
-  maxLeftovers: 80,
+  /** Missed balls kept on the shared table, one per player. */
+  maxLeftovers: 40,
 } as const;

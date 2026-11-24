@@ -40,10 +40,10 @@ export function Splash() {
   const { data } = state;
   const streak = data.me && data.me.streak > 1 ? ` You’re on a ${data.me.streak}-day run.` : '';
   return (
-    <main className="flex min-h-screen gap-4 bg-felt p-5 text-ink">
+    <main className="flex min-h-screen gap-4 bg-felt p-4 text-ink sm:p-5">
       <div className="flex min-w-0 flex-1 flex-col justify-between gap-3">
         <p className="text-sm text-ink-soft">
-          Crumple #{data.round.dayNumber}. One level for everyone, every miss stays on the table.{streak}
+          Crumple #{data.round.dayNumber}. Every miss stays on the table.{streak}
         </p>
         {data.round.level.twist && (
           <p className="-rotate-2 self-start rounded-sm bg-coral px-2 font-display text-lg text-ink">
@@ -51,7 +51,7 @@ export function Splash() {
           </p>
         )}
         <div className="-rotate-1">
-          <h1 className="font-display text-[2.5rem] leading-[1.05] font-normal">{data.round.level.name}</h1>
+          <h1 className="font-display text-[2rem] leading-[1.05] font-normal sm:text-[2.5rem]">{data.round.level.name}</h1>
           <Scribble className="mt-1 max-w-[16rem]" />
         </div>
         <div className="flex flex-col gap-3">
@@ -63,7 +63,8 @@ export function Splash() {
       </div>
       <LevelSketch
         level={data.round.level}
-        className="h-auto max-h-[calc(100vh-2.5rem)] w-[34%] shrink-0 self-center"
+        withPaper
+        className="h-auto max-h-[calc(100vh-2.5rem)] w-[42%] max-w-[15rem] shrink-0 rotate-1 self-center rounded-sm bg-felt shadow-[0_0_0_1px_rgba(34,64,143,0.18),0_6px_14px_-8px_rgba(34,64,143,0.35)]"
       />
     </main>
   );

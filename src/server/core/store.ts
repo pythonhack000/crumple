@@ -3,6 +3,7 @@ import type { LeaderRow, MyRound, PileBall, RoundStatus } from '../../shared/api
 import type { Level, Point } from '../../shared/level';
 import { parseLevel } from '../../shared/level';
 import { parseMaterial } from '../../shared/ball-art';
+import { PHYSICS } from '../../shared/physics';
 import type { Material } from '../../shared/ball-art';
 
 /** A stored round. One per UTC day. */
@@ -141,10 +142,14 @@ export async function addAttempt(dayKey: string, username: string): Promise<numb
 }
 
 /** Shared table: the newest missed balls from every player today. */
-export const PILE_SIZE = 80;
+export const PILE_SIZE = PHYSICS.maxLeftovers;
 
 /** Drops a missed ball on today's shared table, keeping only the newest. */
+/** Puts a player's missed ball on today's table. Each player keeps one ball there: their latest miss. */
 export async function addToPile(dayKey: string, username: string, point: Point): Promise<void> {
+  const rows = await redis.zRange(key.pile(dayKey), 0, -1, { by: 'rank' });
+  const previous = rows.filter((row) => row.member.split(',')[2] === username).map((row) => row.member);
+  if (previous.length) await redis.zRem(key.pile(dayKey), previous);
   const member = `${point.x},${point.y},${username},${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   await redis.zAdd(key.pile(dayKey), { member, score: Date.now() });
   await redis.zRemRangeByRank(key.pile(dayKey), 0, -(PILE_SIZE + 1));
