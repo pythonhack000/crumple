@@ -40,7 +40,7 @@ Crumple is a daily physics puzzle drawn in ballpoint pen on a notebook page. Eve
 - **Making a shared table fair.** A table that fills up during the day makes evening play easier, so the score includes a clean table bonus that shrinks as the pile grows.
 - **Trusting nobody, cheaply.** Re-simulating a player's exact shot on the server isn't reliable across browsers, because floating-point trig differs. Instead the server counts throws itself and proves each player-made level solvable with a grid search, which takes a fraction of a second.
 - **Physics gotchas.** A ball created as static in Matter.js has no stored mass and turns into NaN when released; the first version of every level was unsolvable until we found it.
-- **Difficulty you can measure.** Eyeballing levels gave us two that only 3 or 4 of 4,320 shots could sink. The checker now prints each level's hit rate, we tuned them to between 0.5% and 3%, and the daily rotation runs easiest first.
+- **Difficulty you can measure.** Eyeballing levels gave us two that only 3 or 4 of 4,320 shots could sink. The checker now prints each level's hit rate, we tuned them to between about 0.5% and 3%, and the daily rotation runs easiest first.
 - **Assists that can't be farmed.** The client reports which pile balls a shot touched, and the server only credits owners who really have a ball on today's table and aren't the shooter.
 
 ### Accomplishments that we're proud of
