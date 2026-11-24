@@ -10,6 +10,7 @@ A daily trick shot drawn in ballpoint pen. Every miss stays on the table for the
 - App listing: https://developers.reddit.com/apps/crowd-hunch
 - Demo post: https://www.reddit.com/r/crowd_hunch_dev/ (open the newest "Crumple #" post; the pinned post explains how to play)
 - Video: https://youtube.com/shorts/4k6fMUWD7r8
+- Code: https://github.com/pythonhack000/crumple
 - Built with: devvit, devvit-web, react, typescript, tailwindcss, phaser, matter-js, hono, redis, web-audio-api, vite
 
 ## About the project
