@@ -54,10 +54,6 @@
       "new-day": {
         "endpoint": "/internal/scheduler/new-day",
         "cron": "0 0 * * *"
-      },
-      "post-guide": {
-        "endpoint": "/internal/scheduler/post-guide",
-        "cron": "* * * * *"
       }
     }
   },
