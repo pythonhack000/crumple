@@ -26,7 +26,7 @@ Your missed ball stays on the table for everyone for the rest of the day. Other 
 
 A new level opens at midnight UTC. Every seventh day has a twist: low gravity, a bouncy ball, a glass ball that shatters, or a bin that dodges.
 
-When the day closes, the results and the best shots go in a pinned comment. Tap **Share result** to copy a line for the comments. It says how you did without giving away the shot.
+When the day closes, the top scores and the most helpful miss go in a pinned comment. Tap **Share result** to copy a line for the comments. It says how you did without giving away the shot.
 
 Found a bug or have an idea? Leave a comment below.`;
 
