@@ -32,6 +32,13 @@
         "location": "subreddit",
         "forUserType": "moderator",
         "endpoint": "/internal/menu/repost-today"
+      },
+      {
+        "label": "Crumple: post the how-to-play guide",
+        "description": "Posts a short guide and pins it",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/post-guide"
       }
     ]
   },
